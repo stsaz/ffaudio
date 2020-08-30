@@ -172,6 +172,7 @@ struct ffaudio_buf {
 	ffuint period_ms;
 	ffuint have_data;
 	ffuint last_playpos;
+	ffuint last_filled;
 	ffuint drained;
 	ffuint nonblock;
 
@@ -185,6 +186,7 @@ ffaudio_buf* ffdsound_alloc()
 	ffaudio_buf *b = ffmem_new(ffaudio_buf);
 	if (b == NULL)
 		return NULL;
+	b->last_filled = -1;
 	return b;
 }
 
@@ -538,19 +540,18 @@ int ffdsound_drain(ffaudio_buf *b)
 		return 1;
 
 	int r;
-	ffuint last_filled = -1;
 	for (;;) {
 		r = dsound_filled(b);
 		if (r < 0)
 			return r;
-		else if (r == 0 || (ffuint)r > last_filled) {
+		else if (r == 0 || (ffuint)r > b->last_filled) {
 			/* Note: the beginning of the "invalid" data may have been played already
 			We should insert silence to avoid that */
 			b->drained = 1;
 			(void) ffdsound_stop(b);
 			return 1;
 		}
-		last_filled = r;
+		b->last_filled = r;
 
 		if (0 != (r = ffdsound_start(b)))
 			return r;

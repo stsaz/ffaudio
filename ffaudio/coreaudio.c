@@ -471,6 +471,9 @@ int ffcoreaudio_read(ffaudio_buf *b, const void **buffer)
 		if (r != 0)
 			return r;
 
+		if (0 != (r = ffcoreaudio_start(b)))
+			return -r;
+
 		if (b->nonblock)
 			return 0;
 

@@ -525,6 +525,9 @@ int ffalsa_drain(ffaudio_buf *b)
 		if (r <= 0)
 			return 1;
 
+		if (0 != ffalsa_start(b))
+			return -FFAUDIO_ERROR;
+
 		if (b->nonblock)
 			return 0;
 

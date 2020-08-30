@@ -522,8 +522,8 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	ffuint buf_align = 0;
 	ffuint e_pointer = 0;
 	ffuint excl = !!(flags & FFAUDIO_O_EXCLUSIVE);
-	ffuint capture = ((flags & 0x0f) == FFAUDIO_DEV_CAPTURE);
 	ffuint loopback = ((flags & 0x0f) == FFAUDIO_LOOPBACK);
+	ffuint capture = ((flags & 0x0f) == FFAUDIO_DEV_CAPTURE) || loopback;
 	ffuint events = ((flags & (FFAUDIO_O_EXCLUSIVE | FFAUDIO_LOOPBACK)) == FFAUDIO_O_EXCLUSIVE);
 	b->nonblock = !!(flags & FFAUDIO_O_NONBLOCK);
 	b->notify_unsync = !!(flags & FFAUDIO_O_UNSYNC_NOTIFY);
@@ -540,7 +540,7 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	}
 
 	if (conf->device_id == NULL) {
-		ffuint mode = (capture) ? eCapture : eRender;
+		ffuint mode = (capture && !loopback) ? eCapture : eRender;
 		if (0 != (r = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enu, mode, eConsole, &dev))) {
 			b->errfunc = "IMMDeviceEnumerator_GetDefaultAudioEndpoint";
 			goto end;
@@ -897,11 +897,11 @@ static int wasapi_write_excl(ffaudio_buf *b, const void *data, ffsize len)
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
 
-		if (b->nonblock)
+		ffuint t = (b->nonblock) ? 0 : 5000;
+		r = WaitForSingleObject(b->event, t);
+		if (r == WAIT_TIMEOUT && b->nonblock) {
 			return 0;
-
-		r = WaitForSingleObject(b->event, INFINITE);
-		if (r != WAIT_OBJECT_0) {
+		} else if (r != WAIT_OBJECT_0) {
 			b->errfunc = "WaitForSingleObject";
 			b->err = GetLastError();
 			return -FFAUDIO_ERROR;
@@ -968,6 +968,9 @@ int ffwasapi_drain(ffaudio_buf *b)
 		if (filled == 0)
 			return 1;
 
+		if (0 != (r = ffwasapi_start(b)))
+			return -r;
+
 		if (b->nonblock)
 			return 0;
 
@@ -989,11 +992,11 @@ static int wasapi_read_excl(ffaudio_buf *b, const void **data)
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
 
-		if (b->nonblock)
+		ffuint t = (b->nonblock) ? 0 : 5000;
+		r = WaitForSingleObject(b->event, t);
+		if (r == WAIT_TIMEOUT && b->nonblock) {
 			return 0;
-
-		r = WaitForSingleObject(b->event, INFINITE);
-		if (r != WAIT_OBJECT_0) {
+		} else if (r != WAIT_OBJECT_0) {
 			b->errfunc = "WaitForSingleObject";
 			b->err = GetLastError();
 			return -FFAUDIO_ERROR;

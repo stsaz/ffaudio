@@ -285,6 +285,8 @@ struct ffaudio_buf {
 	pa_stream *stm;
 	ffuint buf_locked;
 	ffuint nonblock;
+	ffuint drained;
+	pa_operation *drain_op;
 	const char *error;
 };
 
@@ -305,6 +307,8 @@ void ffpulse_free(ffaudio_buf *b)
 		pa_stream_disconnect(b->stm);
 		pa_stream_unref(b->stm);
 	}
+	if (b->drain_op != NULL)
+		pa_operation_unref(b->drain_op);
 	ffmem_free(b);
 }
 
@@ -321,6 +325,7 @@ static const ffuint afmt_pa[] = {
 	PA_SAMPLE_FLOAT32LE,
 };
 
+/** ffaudio format -> Pulse format */
 static int pulse_fmt(ffuint f)
 {
 	int r;
@@ -531,14 +536,42 @@ end:
 
 int ffpulse_drain(ffaudio_buf *b)
 {
+	if (b->drained)
+		return 1;
+
 	pa_threaded_mainloop_lock(b->ctx->mloop);
 
-	pa_operation *op = pa_stream_drain(b->stm, pulse_on_op, b->ctx);
-	pulse_op_wait(b->ctx, op);
-	pa_operation_unref(op);
+	int r;
+	if (b->drain_op != NULL) {
+		r = pa_operation_get_state(b->drain_op);
+		if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED) {
+			pa_operation_unref(b->drain_op);
+			b->drain_op = NULL;
+			b->drained = 1;
+			r = 1;
+		} else {
+			pulse_start(b);
+			r = 0;
+		}
 
+		goto end;
+	}
+
+	pulse_start(b);
+
+	pa_operation *op = pa_stream_drain(b->stm, pulse_on_op, b->ctx);
+	if (!b->nonblock) {
+		pulse_op_wait(b->ctx, op);
+		pa_operation_unref(op);
+		r = 1;
+	} else {
+		b->drain_op = op;
+		r = 0;
+	}
+
+end:
 	pa_threaded_mainloop_unlock(b->ctx->mloop);
-	return 1;
+	return r;
 }
 
 int ffpulse_read(ffaudio_buf *b, const void **data)

@@ -76,28 +76,32 @@ static ffssize ffstderr_write(const void *data, ffsize len);
 NOT printf()-compatible (see ffs_formatv()) */
 static inline ffssize ffstdout_fmt(const char *fmt, ...)
 {
-	char s[4096];
 	va_list args;
 	va_start(args, fmt);
-	ffssize r = ffs_formatv(s, sizeof(s), fmt, args);
+	ffstr s = {};
+	ffsize cap = 0;
+	ffsize r = ffstr_growfmtv(&s, &cap, fmt, args);
 	va_end(args);
-	if (r <= 0)
-		return r;
-	return ffstdout_write(s, r);
+	if (r != 0)
+		r = ffstdout_write(s.ptr, r);
+	ffstr_free(&s);
+	return r;
 }
 
 /** %-formatted output to stderr
 NOT printf()-compatible (see ffs_formatv()) */
 static inline ffssize ffstderr_fmt(const char *fmt, ...)
 {
-	char s[4096];
 	va_list args;
 	va_start(args, fmt);
-	ffssize r = ffs_formatv(s, sizeof(s), fmt, args);
+	ffstr s = {};
+	ffsize cap = 0;
+	ffsize r = ffstr_growfmtv(&s, &cap, fmt, args);
 	va_end(args);
-	if (r <= 0)
-		return r;
-	return ffstderr_write(s, r);
+	if (r != 0)
+		r = ffstderr_write(s.ptr, r);
+	ffstr_free(&s);
+	return r;
 }
 
 #define fflog(fmt, ...)  (void) ffstdout_fmt(fmt "\n", ##__VA_ARGS__)

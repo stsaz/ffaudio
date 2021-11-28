@@ -226,34 +226,20 @@ typedef struct ffaudio_interface {
 } ffaudio_interface;
 
 /** API for direct use */
-const ffaudio_interface ffalsa;
-const ffaudio_interface ffpulse;
-const ffaudio_interface ffjack;
-const ffaudio_interface ffwasapi;
-const ffaudio_interface ffdsound;
-const ffaudio_interface ffcoreaudio;
-const ffaudio_interface ffoss;
+FF_EXTERN const ffaudio_interface ffalsa;
+FF_EXTERN const ffaudio_interface ffpulse;
+FF_EXTERN const ffaudio_interface ffjack;
+FF_EXTERN const ffaudio_interface ffwasapi;
+FF_EXTERN const ffaudio_interface ffdsound;
+FF_EXTERN const ffaudio_interface ffcoreaudio;
+FF_EXTERN const ffaudio_interface ffoss;
+
+#ifndef FFAUDIO_INTERFACE_DEFAULT_PTR
+	#define FFAUDIO_INTERFACE_DEFAULT_PTR  NULL
+#endif
 
 /** Get the first available API */
 static inline const ffaudio_interface* ffaudio_default_interface()
 {
-	if (ffpulse.init != NULL)
-		return &ffpulse;
-	if (ffalsa.init != NULL)
-		return &ffalsa;
-	if (ffjack.init != NULL)
-		return &ffjack;
-
-	if (ffwasapi.init != NULL)
-		return &ffwasapi;
-	if (ffdsound.init != NULL)
-		return &ffdsound;
-
-	if (ffcoreaudio.init != NULL)
-		return &ffcoreaudio;
-
-	if (ffoss.init != NULL)
-		return &ffoss;
-
-	return NULL;
+	return FFAUDIO_INTERFACE_DEFAULT_PTR;
 }

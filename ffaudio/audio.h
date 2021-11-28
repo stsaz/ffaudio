@@ -13,6 +13,7 @@ enum FFAUDIO_E {
 	FFAUDIO_ERROR,
 	FFAUDIO_EFORMAT,
 	FFAUDIO_ESYNC,
+	FFAUDIO_EDEV_OFFLINE,
 };
 
 /** Device type */
@@ -196,6 +197,7 @@ typedef struct ffaudio_interface {
 	Return
 	  * number of bytes written
 	  * -FFAUDIO_ERROR: Error
+	  * -FFAUDIO_EDEV_OFFLINE: Device went offline
 	  * -FFAUDIO_ESYNC: Underrun detected (not a fatal error) */
 	int (*write)(ffaudio_buf *b, const void *data, ffsize len);
 
@@ -217,6 +219,8 @@ typedef struct ffaudio_interface {
 	Return
 	  * Number of bytes read
 	  * -FFAUDIO_ERROR: Error
+	  * -FFAUDIO_EDEV_OFFLINE: Device went offline
+	    WASAPI exclusive mode: program may crash while accessing the buffer because Windows unmaps the memory region before we can Release() the buffer.
 	  * -FFAUDIO_ESYNC: Overrun detected (not a fatal error) */
 	int (*read)(ffaudio_buf *b, const void **buffer);
 } ffaudio_interface;

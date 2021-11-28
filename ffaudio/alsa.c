@@ -501,21 +501,26 @@ int ffalsa_write(ffaudio_buf *b, const void *data, ffsize len)
 {
 	for (;;) {
 		int r = alsa_writeonce(b, data, len);
-
-		if (r == -FFAUDIO_ERROR
-			&& 0 == alsa_handle_error(b, b->err))
-			continue;
-		else if (r != 0)
+		if (r > 0) {
 			return r;
+		} else if (r < 0) {
+			if (0 == alsa_handle_error(b, b->err))
+				continue;
+			break;
+		}
 
 		if (0 != ffalsa_start(b))
-			return -FFAUDIO_ERROR;
+			break;
 
 		if (b->nonblock)
 			return 0;
 
 		usleep(b->period_ms*1000);
 	}
+
+	if (b->err == -ENODEV)
+		return -FFAUDIO_EDEV_OFFLINE;
+	return -FFAUDIO_ERROR;
 }
 
 int ffalsa_drain(ffaudio_buf *b)
@@ -539,21 +544,26 @@ int ffalsa_read(ffaudio_buf *b, const void **data)
 {
 	for (;;) {
 		int r = alsa_readonce(b, data);
-
-		if (r == -FFAUDIO_ERROR
-			&& 0 == alsa_handle_error(b, b->err))
-			continue;
-		else if (r != 0)
+		if (r > 0) {
 			return r;
+		} else if (r < 0) {
+			if (0 == alsa_handle_error(b, b->err))
+				continue;
+			break;
+		}
 
 		if (0 != ffalsa_start(b))
-			return -FFAUDIO_ERROR;
+			break;
 
 		if (b->nonblock)
 			return 0;
 
 		usleep(b->period_ms*1000);
 	}
+
+	if (b->err == -ENODEV)
+		return -FFAUDIO_EDEV_OFFLINE;
+	return -FFAUDIO_ERROR;
 }
 
 const char* ffalsa_error(ffaudio_buf *b)

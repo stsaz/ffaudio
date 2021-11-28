@@ -212,13 +212,15 @@ struct ffaudio_buf {
 	IAudioCaptureClient *capt;
 	HANDLE event;
 
-	ffbyte *buf_ptr;
+	// exclusive mode playback
+	ffbyte *buf; // store incomplete chunks of user data
 	ffuint buf_off;
+
 	int filled_buffers;
 	ffuint frame_size;
 	ffuint n_frames;
 	ffuint buf_frames;
-	ffuint period_ms;
+	ffuint max_ms, period_ms;
 	ffuint started;
 	ffuint nonblock;
 	ffuint notify_unsync;
@@ -254,6 +256,8 @@ static void wasapi_close(ffaudio_buf *b)
 		CloseHandle(b->event);
 		b->event = NULL;
 	}
+	ffmem_free(b->buf);
+	b->buf = NULL;
 }
 
 void ffwasapi_free(ffaudio_buf *b)
@@ -674,8 +678,13 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	conf->buffer_length_msec = buffer_size_to_msec(conf, b->buf_frames * b->frame_size);
 	b->period_ms = conf->buffer_length_msec / 4;
 	if (events) {
+		if (NULL == (b->buf = ffmem_alloc(b->buf_frames * b->frame_size))) {
+			b->err = ERROR_NOT_ENOUGH_MEMORY;
+			goto end;
+		}
 		conf->buffer_length_msec *= 2;
 	}
+	b->max_ms = conf->buffer_length_msec;
 	rc = 0;
 
 end:
@@ -816,16 +825,7 @@ static int wasapi_release(ffaudio_buf *b)
 		}
 	}
 
-	if (b->buf_ptr != 0) {
-		if (0 != (r = IAudioRenderClient_ReleaseBuffer(b->render, b->buf_frames, 0))) {
-			b->errfunc = "IAudioRenderClient_ReleaseBuffer";
-			b->err = r;
-			return -FFAUDIO_ERROR;
-		}
-		b->buf_ptr = NULL;
-		b->filled_buffers = 0;
-	}
-
+	b->filled_buffers = 0;
 	return 0;
 }
 
@@ -841,41 +841,61 @@ static int wasapi_writeonce_excl(ffaudio_buf *b, const void *data, ffsize len)
 		// underrun
 		b->filled_buffers = 0;
 		ffwasapi_stop(b);
-		if (b->buf_ptr != NULL) {
-			if (0 != (r = IAudioRenderClient_ReleaseBuffer(b->render, b->buf_frames, 0))) {
-				b->errfunc = "IAudioRenderClient_ReleaseBuffer";
-				b->err = r;
-				return -FFAUDIO_ERROR;
-			}
-			b->buf_ptr = NULL;
-		}
 		return -FFAUDIO_ESYNC;
 	}
 
-	if (b->buf_ptr == NULL) {
-		if (0 != (r = IAudioRenderClient_GetBuffer(b->render, b->buf_frames, &b->buf_ptr))) {
-			b->errfunc = "IAudioRenderClient_GetBuffer";
-			b->err = r;
-			return -FFAUDIO_ERROR;
-		}
+	const void *d = data;
+	ffuint bufsize = b->buf_frames * b->frame_size;
+	ffuint n = bufsize;
+	if (b->buf_off != 0 || len < bufsize) {
+		// cache user data until we have a full buffer
+		n = ffmin(len, bufsize - b->buf_off);
+		ffmem_copy(&b->buf[b->buf_off], data, n);
+		b->buf_off += n;
+		if (b->buf_off != bufsize)
+			return n;
 		b->buf_off = 0;
+		d = b->buf;
 	}
 
-	ffuint n = ffmin(len, b->buf_frames * b->frame_size - b->buf_off);
-	ffmem_copy(b->buf_ptr + b->buf_off, data, n);
-	b->buf_off += n;
-
-	if (b->buf_off == b->buf_frames * b->frame_size) {
-		if (0 != (r = IAudioRenderClient_ReleaseBuffer(b->render, b->buf_frames, 0))) {
-			b->errfunc = "IAudioRenderClient_ReleaseBuffer";
-			b->err = r;
-			return -FFAUDIO_ERROR;
-		}
-		b->buf_ptr = NULL;
-		b->filled_buffers++;
+	ffbyte *hwbuf;
+	if (0 != (r = IAudioRenderClient_GetBuffer(b->render, b->buf_frames, &hwbuf))) {
+		b->errfunc = "IAudioRenderClient_GetBuffer";
+		b->err = r;
+		return -FFAUDIO_ERROR;
 	}
 
+	ffmem_copy(hwbuf, d, bufsize);
+
+	if (0 != (r = IAudioRenderClient_ReleaseBuffer(b->render, b->buf_frames, 0))) {
+		b->errfunc = "IAudioRenderClient_ReleaseBuffer";
+		b->err = r;
+		return -FFAUDIO_ERROR;
+	}
+	b->filled_buffers++;
 	return n;
+}
+
+static int wasapi_return_error(ffaudio_buf *b)
+{
+	if (b->err == AUDCLNT_E_DEVICE_INVALIDATED)
+		return -FFAUDIO_EDEV_OFFLINE;
+	return -FFAUDIO_ERROR;
+}
+
+/** Check for device error.
+Seems that IAudioClient_GetBufferSize() has the minimum latency.
+Return enum FFAUDIO_E (negative) */
+static int wasapi_dev_status(ffaudio_buf *b)
+{
+	int r;
+	ffuint n;
+	if (0 != (r = IAudioClient_GetBufferSize(b->client, &n))) {
+		b->errfunc = "IAudioClient_GetBufferSize";
+		b->err = r;
+		return wasapi_return_error(b);
+	}
+	return 0;
 }
 
 /*
@@ -886,22 +906,31 @@ On underrun the sound continues to play in a loop, so the manual stop and reset 
 */
 static int wasapi_write_excl(ffaudio_buf *b, const void *data, ffsize len)
 {
-	int r;
 	for (;;) {
-		if (0 != (r = wasapi_writeonce_excl(b, data, len))) {
+		int r = wasapi_writeonce_excl(b, data, len);
+		if (r > 0) {
+			return r;
+		} else if (r < 0) {
 			if (r == -FFAUDIO_ESYNC && !b->notify_unsync)
 				continue;
+			else if (r == -FFAUDIO_ERROR)
+				return wasapi_return_error(b);
 			return r;
 		}
 
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
 
-		ffuint t = (b->nonblock) ? 0 : 5000;
+		ffuint t = (b->nonblock) ? 0 : b->max_ms;
 		r = WaitForSingleObject(b->event, t);
-		if (r == WAIT_TIMEOUT && b->nonblock) {
-			return 0;
-		} else if (r != WAIT_OBJECT_0) {
+		if (r != WAIT_OBJECT_0) {
+			if (r == WAIT_TIMEOUT) {
+				if (0 != (r = wasapi_dev_status(b)))
+					return r;
+				if (b->nonblock)
+					return 0;
+				SetLastError(ERROR_SEM_TIMEOUT);
+			}
 			b->errfunc = "WaitForSingleObject";
 			b->err = GetLastError();
 			return -FFAUDIO_ERROR;
@@ -920,10 +949,15 @@ int ffwasapi_write(ffaudio_buf *b, const void *data, ffsize len)
 	if (b->event != NULL)
 		return wasapi_write_excl(b, data, len);
 
-	int r;
 	for (;;) {
-		if (0 != (r = wasapi_writeonce(b, data, len)))
+		int r = wasapi_writeonce(b, data, len);
+		if (r > 0)
 			return r;
+		else if (r < 0) {
+			if (r == -FFAUDIO_ERROR)
+				return wasapi_return_error(b);
+			return r;
+		}
 
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
@@ -942,8 +976,13 @@ static int wasapi_drain_excl(ffaudio_buf *b)
 		if (b->filled_buffers == 0)
 			return 1;
 
-		r = WaitForSingleObject(b->event, INFINITE);
+		r = WaitForSingleObject(b->event, b->max_ms);
 		if (r != WAIT_OBJECT_0) {
+			if (r == WAIT_TIMEOUT) {
+				if (0 != (r = wasapi_dev_status(b)))
+					return r;
+				SetLastError(ERROR_SEM_TIMEOUT);
+			}
 			b->errfunc = "WaitForSingleObject";
 			b->err = GetLastError();
 			return -FFAUDIO_ERROR;
@@ -963,7 +1002,7 @@ int ffwasapi_drain(ffaudio_buf *b)
 		if (0 != (r = IAudioClient_GetCurrentPadding(b->client, &filled))) {
 			b->errfunc = "IAudioClient_GetCurrentPadding";
 			b->err = r;
-			return -FFAUDIO_ERROR;
+			return wasapi_return_error(b);
 		}
 		if (filled == 0)
 			return 1;
@@ -986,17 +1025,24 @@ static int wasapi_read_excl(ffaudio_buf *b, const void **data)
 			&& 0 != (r = wasapi_readonce(b, data))) {
 			if (r > 0)
 				b->filled_buffers--;
+			else if (r == -FFAUDIO_ERROR)
+				return wasapi_return_error(b);
 			return r;
 		}
 
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
 
-		ffuint t = (b->nonblock) ? 0 : 5000;
+		ffuint t = (b->nonblock) ? 0 : b->max_ms;
 		r = WaitForSingleObject(b->event, t);
-		if (r == WAIT_TIMEOUT && b->nonblock) {
-			return 0;
-		} else if (r != WAIT_OBJECT_0) {
+		if (r != WAIT_OBJECT_0) {
+			if (r == WAIT_TIMEOUT) {
+				if (0 != (r = wasapi_dev_status(b)))
+					return r;
+				if (b->nonblock)
+					return 0;
+				SetLastError(ERROR_SEM_TIMEOUT);
+			}
 			b->errfunc = "WaitForSingleObject";
 			b->err = GetLastError();
 			return -FFAUDIO_ERROR;
@@ -1010,10 +1056,15 @@ int ffwasapi_read(ffaudio_buf *b, const void **data)
 	if (b->event != NULL)
 		return wasapi_read_excl(b, data);
 
-	int r;
 	for (;;) {
-		if (0 != (r = wasapi_readonce(b, data)))
+		int r = wasapi_readonce(b, data);
+		if (r > 0) {
 			return r;
+		} else if (r < 0) {
+			if (r == -FFAUDIO_ERROR)
+				return wasapi_return_error(b);
+			return r;
+		}
 
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;

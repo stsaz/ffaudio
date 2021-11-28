@@ -633,6 +633,7 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 			ffuint buf_frames;
 			if (0 != (r = IAudioClient_GetBufferSize(b->client, &buf_frames))) {
 				b->errfunc = "IAudioClient_GetBufferSize";
+				b->err = r;
 				goto end;
 			}
 
@@ -664,6 +665,7 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	if (0 != (r = IAudioClient_GetBufferSize(b->client, &b->buf_frames))) {
 		b->errfunc = "IAudioClient_GetBufferSize";
+		b->err = r;
 		goto end;
 	}
 

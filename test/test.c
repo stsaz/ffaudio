@@ -172,9 +172,10 @@ void play(ffaudio_conf *conf, ffuint flags)
 				fflog("detected underrun");
 				continue;
 			}
-			fflog(" %dms", r * 1000 / sec_bytes);
 			if (r < 0)
 				fflog("ffaudio.write: %s", audio->error(b));
+			else
+				fflog(" %dms", r * 1000 / sec_bytes);
 			x(r >= 0);
 			ffstr_shift(&data, r);
 			total_written += r;

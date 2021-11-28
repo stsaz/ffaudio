@@ -2,16 +2,18 @@
 
 ffaudio is a fast cross-platform interface for Audio Input/Output for C and C++.
 
+It provides advanced features for complex apps like [fmedia audio player/recorder](github.com/stsaz/fmedia), or it can be used by tiny programs like [wav player example](./wav-player-example/player.c).
+
 Contents:
 
-* Features
-* How to use
+* [Features](#features)
+* [How to use](#how-to-use)
 	* List all available playback devices
 	* Record data from audio device
-* How to build
+* [How to build](#how-to-build)
 	* Makefile helper
 	* Build information for each audio API
-* How to test
+* [How to test](#how-to-test)
 
 ## Features
 
@@ -43,6 +45,7 @@ Write your cross-platform code using `ffaudio_interface` interface.
 
 ### List all available playback devices
 
+```c
 	#include <ffaudio/audio.h>
 
 	// get API
@@ -70,10 +73,11 @@ Write your cross-platform code using `ffaudio_interface` interface.
 	audio->dev_free(d);
 
 	audio->uninit();
-
+```
 
 ### Record data from audio device
 
+```c
 	#include <ffaudio/audio.h>
 
 	// get API
@@ -111,8 +115,18 @@ Write your cross-platform code using `ffaudio_interface` interface.
 
 	audio->free(buf);
 	audio->uninit();
+```
 
-Instead of calling `ffaudio_default_interface()` which gives you the first available API, you can use a specific API, e.g. `ffalsa`.
+In order for `ffaudio_default_interface()` function to work you should define `FFAUDIO_INTERFACE_DEFAULT_PTR` with the API you want to use, either in code:
+
+	#define FFAUDIO_INTERFACE_DEFAULT_PTR  &ffalsa
+	#include <ffaudio/audio.h>
+
+or in Makefile:
+
+	CFLAGS += -DFFAUDIO_INTERFACE_DEFAULT_PTR="&ffalsa"
+
+But instead of calling `ffaudio_default_interface()` you can just use an API directly, e.g. `ffalsa`.
 
 
 ## How to build
@@ -127,18 +141,20 @@ Use the neceessary linker flags for the audio API, described below.
 
 ### Build information for each audio API
 
+Configure your building script to compile particular C file and use appropriate link flags.
+
 ALSA:
-* Install `libalsa-devel`
+* Install package `libalsa-devel`
 * Compile `ffaudio/alsa.c`
 * Link with `-lasound`
 
 PulseAudio:
-* Install `libpulse-devel`
+* Install package `libpulse-devel`
 * Compile `ffaudio/pulse.c`
 * Link with `-lpulse`
 
 JACK:
-* Install `jack-audio-connection-kit-devel`
+* Install package `jack-audio-connection-kit-devel`
 * Compile `ffaudio/jack.c`
 * Link with `-ljack`
 
@@ -163,47 +179,52 @@ OSS:
 
 	git clone https://github.com/stsaz/ffbase
 	git clone https://github.com/stsaz/ffaudio
-	cd ffaudio
-	make
-
-This command builds executable files for all supported audio API on your OS.
-There are a lot of additional arguments that you can pass to these executable files.
+	cd ffaudio/test
 
 Linux:
 
+	make -B FFAUDIO_API=alsa
 	./ffaudio-alsa list
 	./ffaudio-alsa record 2>file.raw
 	./ffaudio-alsa play <file.raw
 
+	make -B FFAUDIO_API=pulse
 	./ffaudio-pulse list
 	./ffaudio-pulse record 2>file.raw
 	./ffaudio-pulse play <file.raw
 
+	make -B FFAUDIO_API=jack
 	./ffaudio-jack list
 	./ffaudio-jack record 2>file.raw
 	# [not implemented] ./ffaudio-jack play <file.raw
 
 Windows:
 
+	make -B FFAUDIO_API=wasapi
 	.\ffaudio-wasapi.exe list
 	.\ffaudio-wasapi.exe record 2>file.raw
 	.\ffaudio-wasapi.exe play <file.raw
 
+	make -B FFAUDIO_API=dsound
 	.\ffaudio-dsound.exe list
 	.\ffaudio-dsound.exe record 2>file.raw
 	.\ffaudio-dsound.exe play <file.raw
 
 macOS:
 
+	make -B FFAUDIO_API=coreaudio
 	./ffaudio-coreaudio list
 	./ffaudio-coreaudio record 2>file.raw
 	./ffaudio-coreaudio play <file.raw
 
 FreeBSD:
 
+	make -B FFAUDIO_API=oss
 	./ffaudio-oss list
 	./ffaudio-oss record 2>file.raw
 	./ffaudio-oss play <file.raw
+
+There are more additional arguments that you can pass to these executable files.
 
 
 ## License

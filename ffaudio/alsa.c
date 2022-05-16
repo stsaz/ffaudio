@@ -216,7 +216,7 @@ static int alsa_find_best_format(snd_pcm_hw_params_t *params, ffuint format)
 	snd_pcm_format_mask_alloca(&mask);
 	snd_pcm_hw_params_get_format_mask(params, mask);
 
-	for (ffuint i = 0;  i != FF_COUNT(alsa_fmts);  i++) {
+	for (int i = FF_COUNT(alsa_fmts)-1;  i >= 0;  i--) {
 		if (snd_pcm_format_mask_test(mask, alsa_fmts[i]))
 			return fmts[i];
 	}
@@ -377,7 +377,7 @@ static int alsa_handle_error(ffaudio_buf *b, int r)
 	return r;
 }
 
-int ffalsa_start(ffaudio_buf *b)
+int alsa_start(ffaudio_buf *b)
 {
 	int r = snd_pcm_state(b->pcm);
 	if (r == SND_PCM_STATE_RUNNING)
@@ -400,20 +400,51 @@ int ffalsa_start(ffaudio_buf *b)
 	return 0;
 }
 
+int ffalsa_start(ffaudio_buf *b)
+{
+	if (0 != alsa_start(b)) {
+		if (b->err == -EPIPE)
+			return 0;
+		if (0 != alsa_handle_error(b, b->err))
+			return FFAUDIO_ERROR;
+		return alsa_start(b);
+	}
+	return 0;
+}
+
 int ffalsa_stop(ffaudio_buf *b)
 {
 	int r = snd_pcm_state(b->pcm);
 	if (r != SND_PCM_STATE_RUNNING)
 		return 0;
 
-	if (0 != (r = snd_pcm_pause(b->pcm, 1)))
-		return r;
+	if (0 != (r = snd_pcm_pause(b->pcm, 1))) {
+		b->errfunc = "snd_pcm_pause";
+		b->err = r;
+		return FFAUDIO_ERROR;
+	}
 	return 0;
 }
 
 int ffalsa_clear(ffaudio_buf *b)
 {
-	snd_pcm_reset(b->pcm);
+	int r = snd_pcm_state(b->pcm);
+
+	if (r == SND_PCM_STATE_PAUSED) {
+		if (0 != (r = snd_pcm_pause(b->pcm, 0))) {
+			b->errfunc = "snd_pcm_pause";
+			b->err = r;
+			return FFAUDIO_ERROR;
+		}
+	} else if (r == SND_PCM_STATE_XRUN) {
+		return 0;
+	}
+
+	if (0 != (r = snd_pcm_reset(b->pcm))) {
+		b->errfunc = "snd_pcm_reset";
+		b->err = r;
+		return FFAUDIO_ERROR;
+	}
 	return 0;
 }
 
@@ -503,14 +534,15 @@ int ffalsa_write(ffaudio_buf *b, const void *data, ffsize len)
 		int r = alsa_writeonce(b, data, len);
 		if (r > 0) {
 			return r;
-		} else if (r < 0) {
-			if (0 == alsa_handle_error(b, b->err))
-				continue;
-			break;
+		} else if (r == 0) {
+			r = alsa_start(b);
 		}
 
-		if (0 != ffalsa_start(b))
-			break;
+		if (r != 0) {
+			if (0 != alsa_handle_error(b, b->err))
+				break;
+			continue;
+		}
 
 		if (b->nonblock)
 			return 0;

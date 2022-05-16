@@ -228,28 +228,22 @@ void play(ffaudio_conf *conf, ffuint flags)
 	fflog("play done");
 }
 
-int main(int argc, const char **argv)
+struct conf {
+	const char *cmd;
+	ffaudio_conf buf;
+	ffuint flags;
+	ffuint until_ms;
+};
+
+int conf_read(struct conf *c, int argc, const char **argv)
 {
-	const char *cmd = "";
+	c->cmd = "";
 	if (argc >= 2)
-		cmd = argv[1];
-
-	ffaudio_conf bufconf = {};
-	bufconf.app_name = "ffaudio-test";
-	bufconf.buffer_length_msec = 250;
-	bufconf.format = FFAUDIO_F_INT16;
-	bufconf.sample_rate = 44100;
-	bufconf.channels = 2;
-
-	audio = ffaudio_default_interface();
-
-	ffuint until_ms = 2000;
-	ffuint flags = 0;
-
-	if (ffsz_eq(cmd, "record"))
-		flags = FFAUDIO_CAPTURE;
-	else if (ffsz_eq(cmd, "play"))
-		flags = FFAUDIO_PLAYBACK;
+		c->cmd = argv[1];
+	if (ffsz_eq(c->cmd, "record"))
+		c->flags = FFAUDIO_CAPTURE;
+	else if (ffsz_eq(c->cmd, "play"))
+		c->flags = FFAUDIO_PLAYBACK;
 
 	for (int i = 2;  i < argc;  i++) {
 		const char *v = argv[i];
@@ -257,17 +251,17 @@ int main(int argc, const char **argv)
 		ffstr_setz(&s, v);
 
 		if (ffstr_eqz(&s, "--exclusive")) {
-			flags |= FFAUDIO_O_EXCLUSIVE;
+			c->flags |= FFAUDIO_O_EXCLUSIVE;
 
 		} else if (ffstr_eqz(&s, "--loopback")) {
-			flags &= ~0x0f;
-			flags |= FFAUDIO_LOOPBACK;
+			c->flags &= ~0x0f;
+			c->flags |= FFAUDIO_LOOPBACK;
 
 		} else if (ffstr_eqz(&s, "--hwdev")) {
-			flags |= FFAUDIO_O_HWDEV;
+			c->flags |= FFAUDIO_O_HWDEV;
 
 		} else if (ffstr_eqz(&s, "--nonblock")) {
-			flags |= FFAUDIO_O_NONBLOCK;
+			c->flags |= FFAUDIO_O_NONBLOCK;
 
 		} else if (ffstr_eqz(&s, "--underrun")) {
 			underrun = 1;
@@ -279,7 +273,7 @@ int main(int argc, const char **argv)
 				fflog("bad value: %s", v);
 				return 1;
 			}
-			bufconf.buffer_length_msec = n;
+			c->buf.buffer_length_msec = n;
 
 		} else if (ffstr_matchz(&s, "--until=")) {
 			ffstr_shift(&s, FFS_LEN("--until="));
@@ -288,7 +282,7 @@ int main(int argc, const char **argv)
 				fflog("bad value: %s", v);
 				return 1;
 			}
-			until_ms = n;
+			c->until_ms = n;
 
 		} else if (ffstr_matchz(&s, "--channels=")) {
 			ffstr_shift(&s, FFS_LEN("--channels="));
@@ -297,7 +291,7 @@ int main(int argc, const char **argv)
 				fflog("bad value: %s", v);
 				return 1;
 			}
-			bufconf.channels = n;
+			c->buf.channels = n;
 
 		} else if (ffstr_matchz(&s, "--rate=")) {
 			ffstr_shift(&s, FFS_LEN("--rate="));
@@ -306,18 +300,18 @@ int main(int argc, const char **argv)
 				fflog("bad value: %s", v);
 				return 1;
 			}
-			bufconf.sample_rate = n;
+			c->buf.sample_rate = n;
 
 		} else if (ffstr_matchz(&s, "--format=")) {
 			ffstr_shift(&s, FFS_LEN("--format="));
 			if (ffstr_eqz(&s, "float32"))
-				bufconf.format = FFAUDIO_F_FLOAT32;
+				c->buf.format = FFAUDIO_F_FLOAT32;
 			else if (ffstr_eqz(&s, "int32"))
-				bufconf.format = FFAUDIO_F_INT32;
+				c->buf.format = FFAUDIO_F_INT32;
 			else if (ffstr_eqz(&s, "int16"))
-				bufconf.format = FFAUDIO_F_INT16;
+				c->buf.format = FFAUDIO_F_INT16;
 			else if (ffstr_eqz(&s, "int8"))
-				bufconf.format = FFAUDIO_F_INT8;
+				c->buf.format = FFAUDIO_F_INT8;
 			else {
 				fflog("bad value: %s", v);
 				return 1;
@@ -325,52 +319,74 @@ int main(int argc, const char **argv)
 
 		} else if (ffstr_matchz(&s, "--device=")) {
 			ffstr_shift(&s, FFS_LEN("--device="));
-			bufconf.device_id = ffsz_dupn(s.ptr, s.len);
+			c->buf.device_id = ffsz_dupn(s.ptr, s.len);
 
 		} else {
 			fflog("unknown option: %s", v);
 			return 1;
 		}
 	}
+	return 0;
+}
 
-	ffaudio_init_conf conf = {};
-	conf.app_name = "ffaudio";
-	xieq(0, audio->init(&conf));
-
-	if (ffsz_eq(cmd, "list"))
-		list();
-
-	else if (ffsz_eq(cmd, "record"))
-		record(&bufconf, until_ms, flags);
-
-	else if (ffsz_eq(cmd, "play"))
-		play(&bufconf, flags);
-
-	else // if (ffsz_eq(cmd, "help"))
-		ffstdout_fmt(
+void help(const char *psname)
+{
+	ffstdout_fmt(
 "%s COMMAND [OPTION...]\n\
 COMMAND:\n\
-  list     list available devices\n\
-  record   record audio and write to stderr\n\
+  list     List available devices\n\
+  record   Record audio and write to stderr\n\
              e.g. %s record 2>1.raw\n\
-  play     play audio from stdin\n\
+  play     Play audio from stdin\n\
              e.g. %s play <1.raw\n\
-  help     show this message\n\
+  help     Show this message\n\
 \n\
 OPTION:\n\
-  --until=MSEC   stop recording after this time (default:2000)\n\
-  --buffer=MSEC  set buffer size in msec (default:250)\n\
-  --format=...   set sample format: int8, int16, int32, float32 (default:int16)\n\
-  --rate=N       set channels number (default:44100)\n\
-  --channels=N   set channels number (default:2)\n\
-  --nonblock     use non-blocking I/O\n\
-  --underrun     trigger buffer underrun or overrun\n\
-  --device=...   use specific device\n\
-  --hwdev        open \"hw\" device, instead of \"plughw\" (ALSA)\n\
-  --exclusive    open device in exclusive mode (WASAPI)\n\
-  --loopback     open device in loopback mode (WASAPI)\n\
+  --until=MSEC     Stop recording after this time (default:2000)\n\
+  --buffer=MSEC    Set buffer size in msec (default:250)\n\
+  --format=...     Set sample format: int8, int16, int32, float32 (default:int16)\n\
+  --rate=N         Set channels number (default:44100)\n\
+  --channels=N     Set channels number (default:2)\n\
+  --nonblock       Use non-blocking I/O\n\
+  --underrun       Trigger buffer underrun or overrun\n\
+  --device=...     Use specific device\n\
+  --hwdev          Open \"hw\" device, instead of \"plughw\" (ALSA)\n\
+  --exclusive      Open device in exclusive mode (WASAPI)\n\
+  --loopback       Open device in loopback mode (WASAPI)\n\
 "
-			, argv[0], argv[0], argv[0]);
+		, psname, psname, psname);
+}
+
+int main(int argc, const char **argv)
+{
+	struct conf conf = {};
+	conf.until_ms = 2000;
+	conf.buf.app_name = "ffaudio-test";
+	conf.buf.buffer_length_msec = 250;
+	conf.buf.format = FFAUDIO_F_INT16;
+	conf.buf.sample_rate = 44100;
+	conf.buf.channels = 2;
+
+	audio = ffaudio_default_interface();
+
+	if (0 != conf_read(&conf, argc, argv))
+		return 1;
+
+	ffaudio_init_conf aconf = {};
+	aconf.app_name = "ffaudio";
+	xieq(0, audio->init(&aconf));
+
+	if (ffsz_eq(conf.cmd, "list"))
+		list();
+
+	else if (ffsz_eq(conf.cmd, "record"))
+		record(&conf.buf, conf.until_ms, conf.flags);
+
+	else if (ffsz_eq(conf.cmd, "play"))
+		play(&conf.buf, conf.flags);
+
+	else // if (ffsz_eq(cmd, "help"))
+		help(argv[0]);
 
 	audio->uninit();
 	return 0;

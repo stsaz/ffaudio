@@ -4,7 +4,6 @@
 
 #include <ffaudio/audio.h>
 #include <ffbase/ring.h>
-
 #include <CoreAudio/CoreAudio.h>
 #include <CoreFoundation/CFString.h>
 
@@ -210,11 +209,12 @@ const char* ffcoreaudio_dev_error(ffaudio_dev *d)
 struct ffaudio_buf {
 	ffuint dev;
 	void *aprocid;
-	ffring ring;
+	ffring *ring;
 	ffuint period_ms;
 	ffuint overrun;
 	ffuint nonblock;
 	ffstr buf_locked;
+	ffring_head rhead;
 
 	const char *errfunc;
 };
@@ -232,7 +232,7 @@ void ffcoreaudio_free(ffaudio_buf *b)
 	if (b == NULL)
 		return;
 
-	ffring_free(&b->ring);
+	ffring_free(b->ring);
 	AudioDeviceDestroyIOProcID(b->dev, b->aprocid);
 	ffmem_free(b);
 }
@@ -335,8 +335,8 @@ int ffcoreaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
 	ffuint bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
-	if (NULL == ffring_create(&b->ring, bufsize)) {
-		b->errfunc = "ringbuf_create";
+	if (NULL == (b->ring = ffring_alloc(bufsize, FFRINGBUF_1_READER | FFRINGBUF_1_WRITER))) {
+		b->errfunc = "ffring_alloc";
 		goto end;
 	}
 	b->period_ms = conf->buffer_length_msec / 4;
@@ -370,7 +370,7 @@ int ffcoreaudio_stop(ffaudio_buf *b)
 
 int ffcoreaudio_clear(ffaudio_buf *b)
 {
-	ffring_clear(&b->ring);
+	ffring_reset(b->ring);
 	return 0;
 }
 
@@ -379,17 +379,32 @@ static OSStatus coreaudio_ioproc_playback(AudioDeviceID device, const AudioTimeS
 	AudioBufferList *outdata, const AudioTimeStamp *outtime,
 	void *udata)
 {
-	ffaudio_buf *b = udata;
-	float *d = outdata->mBuffers[0].mData;
+	char *d = (char*)outdata->mBuffers[0].mData;
 	size_t n = outdata->mBuffers[0].mDataByteSize;
 
-	ffstr s = ffring_acquire_read(&b->ring);
-	s.len = ffmin(s.len, n);
-	ffmem_copy(d, s.ptr, s.len);
-	ffring_release_read(&b->ring, s.len);
+	ffaudio_buf *b = udata;
+	ffstr s;
+	ffring_head h = ffring_read_begin(b->ring, n, &s, NULL);
+	if (s.len == 0)
+		goto end;
+	memcpy(d, s.ptr, s.len);
+	d += s.len;
+	n -= s.len;
+	ffring_read_finish(b->ring, h);
 
-	if (n > s.len) {
-		ffmem_zero((char*)d + s.len, n - s.len);
+	if (n != 0) {
+		h = ffring_read_begin(b->ring, n, &s, NULL);
+		if (s.len == 0)
+			goto end;
+		memcpy(d, s.ptr, s.len);
+		d += s.len;
+		n -= s.len;
+		ffring_read_finish(b->ring, h);
+	}
+
+end:
+	if (n != 0) {
+		memset(d, 0, n);
 		b->overrun = 1;
 	}
 
@@ -398,7 +413,7 @@ static OSStatus coreaudio_ioproc_playback(AudioDeviceID device, const AudioTimeS
 
 static int coreaudio_writeonce(ffaudio_buf *b, const void *data, ffsize len)
 {
-	ffsize n = ffring_write(&b->ring, data, len);
+	ffsize n = ffring_write(b->ring, data, len);
 	return n;
 }
 
@@ -407,11 +422,11 @@ static OSStatus coreaudio_ioproc_capture(AudioDeviceID device, const AudioTimeSt
 	AudioBufferList *outdata, const AudioTimeStamp *outtime,
 	void *udata)
 {
-	ffaudio_buf *b = udata;
 	const float *d = indata->mBuffers[0].mData;
 	size_t n = indata->mBuffers[0].mDataByteSize;
 
-	ffuint r = ffring_write(&b->ring, d, n);
+	ffaudio_buf *b = udata;
+	ffuint r = ffring_write(b->ring, d, n);
 	if (r != n)
 		b->overrun = 1;
 	return 0;
@@ -420,10 +435,10 @@ static OSStatus coreaudio_ioproc_capture(AudioDeviceID device, const AudioTimeSt
 static int coreaudio_readonce(ffaudio_buf *b, const void **buffer)
 {
 	if (b->buf_locked.len != 0) {
-		ffring_release_read(&b->ring, b->buf_locked.len);
+		ffring_read_finish(b->ring, b->rhead);
 	}
 
-	b->buf_locked = ffring_acquire_read(&b->ring);
+	b->rhead = ffring_read_begin(b->ring, n, &b->buf_locked, NULL);
 	*buffer = b->buf_locked.ptr;
 	return b->buf_locked.len;
 }
@@ -449,7 +464,11 @@ int ffcoreaudio_drain(ffaudio_buf *b)
 {
 	int r;
 	for (;;) {
-		if (0 == ffring_filled(&b->ring)) {
+		ffstr s;
+		ffsize free;
+		ffsize r = ffring_write_begin(b->ring, 0, &s, &free);
+
+		if (free == b->ring->cap) {
 			(void) ffcoreaudio_stop(b);
 			return 1;
 		}

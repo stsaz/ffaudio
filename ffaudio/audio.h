@@ -14,6 +14,10 @@ enum FFAUDIO_E {
 	FFAUDIO_EFORMAT,
 	FFAUDIO_ESYNC,
 	FFAUDIO_EDEV_OFFLINE,
+
+	/** PulseAudio: connection with server failed.
+	Call uninit(), and then init() to reconnect. */
+	FFAUDIO_ECONNECTION,
 };
 
 /** Device type */

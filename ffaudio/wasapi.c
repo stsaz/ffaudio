@@ -527,7 +527,7 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	ffuint e_pointer = 0;
 	ffuint excl = !!(flags & FFAUDIO_O_EXCLUSIVE);
 	ffuint loopback = ((flags & 0x0f) == FFAUDIO_LOOPBACK);
-	ffuint capture = ((flags & 0x0f) == FFAUDIO_DEV_CAPTURE) || loopback;
+	ffuint capture = ((flags & 0x0f) == FFAUDIO_CAPTURE) || loopback;
 	ffuint events = ((flags & (FFAUDIO_O_EXCLUSIVE | FFAUDIO_LOOPBACK)) == FFAUDIO_O_EXCLUSIVE);
 	b->nonblock = !!(flags & FFAUDIO_O_NONBLOCK);
 	b->notify_unsync = !!(flags & FFAUDIO_O_UNSYNC_NOTIFY);

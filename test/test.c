@@ -207,8 +207,7 @@ void play(ffaudio_conf *conf, ffuint flags)
 	}
 	x(r == 1);
 
-	// ffaudio.drain() #2
-	fflog("ffaudio.drain...");
+	fflog("ffaudio.drain #2...");
 	r = audio->drain(b);
 	if (r < 0)
 		fflog("ffaudio.drain: %s", audio->error(b));

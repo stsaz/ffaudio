@@ -4,31 +4,33 @@
 
 #include <ffaudio/audio.h>
 #include <ffbase/stringz.h>
+#include <ffbase/atomic.h>
 #include <pulse/pulseaudio.h>
 #include <errno.h>
 
 
-struct pulse_ctx {
+struct pulse_conn {
 	pa_threaded_mainloop *mloop;
 	pa_context *ctx;
+	int cb_conn_state_change;
 };
 
-static struct pulse_ctx *gctx;
+static struct pulse_conn *gconn;
 
-static void pulse_uninit(struct pulse_ctx *p);
-static void pulse_on_connect(pa_context *c, void *userdata);
-static void pulse_wait(struct pulse_ctx *p);
+static void pulse_uninit(struct pulse_conn *p);
+static void pulse_on_conn_state_change(pa_context *c, void *udata);
+static void pulse_wait(struct pulse_conn *p);
 
 int ffpulse_init(ffaudio_init_conf *conf)
 {
-	struct pulse_ctx *p;
+	struct pulse_conn *p;
 
-	if (gctx != NULL) {
+	if (gconn != NULL) {
 		conf->error = "already initialized";
 		return FFAUDIO_ERROR;
 	}
 
-	if (NULL == (p = ffmem_new(struct pulse_ctx))) {
+	if (NULL == (p = ffmem_new(struct pulse_conn))) {
 		conf->error = "memory allocate";
 		return FFAUDIO_ERROR;
 	}
@@ -47,27 +49,33 @@ int ffpulse_init(ffaudio_init_conf *conf)
 		goto end;
 	}
 
-	pa_context_connect(p->ctx, NULL, 0, NULL);
-	pa_context_set_state_callback(p->ctx, pulse_on_connect, p);
+	if (0 != pa_context_connect(p->ctx, NULL, 0, NULL)) {
+		conf->error = "pa_context_connect";
+		goto end;
+	}
+	pa_context_set_state_callback(p->ctx, pulse_on_conn_state_change, p);
 
 	if (0 != pa_threaded_mainloop_start(p->mloop)) {
 		conf->error = "pa_threaded_mainloop_start";
 		goto end;
 	}
 
+	pa_threaded_mainloop_lock(p->mloop);
 	for (;;) {
 		int r = pa_context_get_state(p->ctx);
 		if (r == PA_CONTEXT_READY)
 			break;
 		else if (r == PA_CONTEXT_FAILED || r == PA_CONTEXT_TERMINATED) {
 			conf->error = pa_strerror(pa_context_errno(p->ctx));
+			pa_threaded_mainloop_unlock(p->mloop);
 			goto end;
 		}
 
 		pulse_wait(p);
 	}
+	pa_threaded_mainloop_unlock(p->mloop);
 
-	gctx = p;
+	gconn = p;
 	return 0;
 
 end:
@@ -75,7 +83,7 @@ end:
 	return FFAUDIO_ERROR;
 }
 
-static void pulse_uninit(struct pulse_ctx *p)
+static void pulse_uninit(struct pulse_conn *p)
 {
 	if (p == NULL)
 		return;
@@ -87,7 +95,7 @@ static void pulse_uninit(struct pulse_ctx *p)
 		pa_threaded_mainloop_unlock(p->mloop);
 	}
 
-	if (p->mloop == NULL) {
+	if (p->mloop != NULL) {
 		pa_threaded_mainloop_stop(p->mloop);
 		pa_threaded_mainloop_free(p->mloop);
 	}
@@ -97,29 +105,81 @@ static void pulse_uninit(struct pulse_ctx *p)
 
 void ffpulse_uninit()
 {
-	pulse_uninit(gctx);
-	gctx = NULL;
+	pulse_uninit(gconn);
+	gconn = NULL;
 }
 
-static void pulse_on_connect(pa_context *c, void *userdata)
+static void pulse_lock(struct pulse_conn *conn)
 {
-	struct pulse_ctx *p = userdata;
-	pa_threaded_mainloop_signal(p->mloop, 0);
+	pa_threaded_mainloop_lock(conn->mloop);
 }
 
-static void pulse_wait(struct pulse_ctx *p)
+static void pulse_unlock(struct pulse_conn *conn)
 {
-	pa_threaded_mainloop_wait(p->mloop);
+	pa_threaded_mainloop_unlock(conn->mloop);
 }
 
-static void pulse_op_wait(struct pulse_ctx *p, pa_operation *op)
+static void pulse_wait(struct pulse_conn *conn)
 {
-	for (;;) {
-		int r = pa_operation_get_state(op);
-		if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED)
-			break;
-		pulse_wait(p);
+	pa_threaded_mainloop_wait(conn->mloop);
+}
+
+/**
+Return
+ 0: complete
+ <0: would block
+ FFAUDIO_ERROR: operation was cancelled
+ FFAUDIO_ECONNECTION: connection failed */
+static int pulse_op_wait(struct pulse_conn *conn, pa_operation *op, int nonblock, int *err)
+{
+	if (op == NULL) {
+		*err = pa_context_errno(conn->ctx);
+		if (PA_CONTEXT_READY != pa_context_get_state(conn->ctx))
+			return FFAUDIO_ECONNECTION;
+		return FFAUDIO_ERROR;
 	}
+
+	int r;
+	for (;;) {
+		r = pa_operation_get_state(op);
+		if (r == PA_OPERATION_DONE) {
+			r = 0;
+			break;
+
+		} else if (r == PA_OPERATION_CANCELLED) {
+			*err = pa_context_errno(conn->ctx);
+
+			if (PA_CONTEXT_READY != pa_context_get_state(conn->ctx)) {
+				r = FFAUDIO_ECONNECTION;
+				break;
+			}
+
+			r = FFAUDIO_ERROR;
+			break;
+		}
+
+		if (nonblock)
+			return -1;
+
+		pulse_wait(conn);
+	}
+
+	pa_operation_unref(op);
+	return r;
+}
+
+static void pulse_signal(struct pulse_conn *conn)
+{
+	pa_threaded_mainloop_signal(conn->mloop, 0);
+}
+
+// Called within mainloop thread after connection state with PA server changes
+static void pulse_on_conn_state_change(pa_context *c, void *udata)
+{
+	struct pulse_conn *conn = udata;
+	FFINT_WRITEONCE(conn->cb_conn_state_change, 1);
+	ffcpu_fence_release();
+	pulse_signal(conn);
 }
 
 
@@ -130,12 +190,14 @@ struct dev_props {
 };
 
 struct ffaudio_dev {
+	struct pulse_conn *conn;
 	ffuint mode;
 	struct dev_props *head, *cur;
+	int cb_dev_next;
 
 	const char *errfunc;
 	char *errmsg;
-	ffuint err;
+	int err;
 };
 
 static void pulse_dev_on_next_sink(pa_context *c, const pa_sink_info *info, int eol, void *udata);
@@ -143,10 +205,13 @@ static void pulse_dev_on_next_source(pa_context *c, const pa_source_info *info, 
 
 ffaudio_dev* ffpulse_dev_alloc(ffuint mode)
 {
+	if (gconn == NULL)
+		return NULL;
 	ffaudio_dev *d = ffmem_new(ffaudio_dev);
 	if (d == NULL)
 		return NULL;
 	d->mode = mode;
+	d->conn = gconn;
 	return d;
 }
 
@@ -173,12 +238,14 @@ void ffpulse_dev_free(ffaudio_dev *d)
 
 static void pulse_dev_on_next_sink(pa_context *c, const pa_sink_info *info, int eol, void *udata)
 {
+	ffaudio_dev *d = udata;
 	if (eol > 0) {
-		pa_threaded_mainloop_signal(gctx->mloop, 0);
+		FFINT_WRITEONCE(d->cb_dev_next, 1);
+		ffcpu_fence_release();
+		pulse_signal(d->conn);
 		return;
 	}
 
-	ffaudio_dev *d = udata;
 	struct dev_props *p = ffmem_new(struct dev_props);
 	if (p == NULL) {
 		d->errfunc = "mem alloc";
@@ -203,12 +270,14 @@ static void pulse_dev_on_next_sink(pa_context *c, const pa_sink_info *info, int 
 
 static void pulse_dev_on_next_source(pa_context *c, const pa_source_info *info, int eol, void *udata)
 {
+	ffaudio_dev *d = udata;
 	if (eol > 0) {
-		pa_threaded_mainloop_signal(gctx->mloop, 0);
+		FFINT_WRITEONCE(d->cb_dev_next, 1);
+		ffcpu_fence_release();
+		pulse_signal(d->conn);
 		return;
 	}
 
-	ffaudio_dev *d = udata;
 	struct dev_props *p = ffmem_new(struct dev_props);
 	if (p == NULL) {
 		d->errfunc = "mem alloc";
@@ -240,17 +309,19 @@ int ffpulse_dev_next(ffaudio_dev *d)
 		return 0;
 	}
 
+	pulse_lock(d->conn);
+
 	pa_operation *op;
-	pa_threaded_mainloop_lock(gctx->mloop);
-	if (d->mode == FFAUDIO_DEV_PLAYBACK)
-		op = pa_context_get_sink_info_list(gctx->ctx, &pulse_dev_on_next_sink, d);
-	else
-		op = pa_context_get_source_info_list(gctx->ctx, &pulse_dev_on_next_source, d);
+	if (d->mode == FFAUDIO_DEV_PLAYBACK) {
+		op = pa_context_get_sink_info_list(d->conn->ctx, pulse_dev_on_next_sink, d);
+		d->errfunc = "pa_context_get_sink_info_list";
+	} else {
+		op = pa_context_get_source_info_list(d->conn->ctx, pulse_dev_on_next_source, d);
+		d->errfunc = "pa_context_get_source_info_list";
+	}
+	pulse_op_wait(d->conn, op, 0, &d->err);
 
-	pulse_op_wait(gctx, op);
-
-	pa_operation_unref(op);
-	pa_threaded_mainloop_unlock(gctx->mloop);
+	pulse_unlock(d->conn);
 
 	if (d->head == NULL) {
 		if (d->err != 0)
@@ -281,20 +352,39 @@ const char* ffpulse_dev_error(ffaudio_dev *d)
 
 
 struct ffaudio_buf {
-	struct pulse_ctx *ctx;
+	struct pulse_conn *conn;
 	pa_stream *stm;
+	ffuint capture;
 	ffuint buf_locked;
 	ffuint nonblock;
 	ffuint drained;
 	pa_operation *drain_op;
-	const char *error;
+	ffuint cb_io;
+	ffuint cb_op;
+
+	int err; // pa_context_errno()
+	const char *errfunc; // PA function name or ffaudio error message
+	char *errmsg; // prepared error message
 };
+
+static int pulse_buf_op_wait(struct ffaudio_buf *b, pa_operation *op)
+{
+	return pulse_op_wait(b->conn, op, 0, &b->err);
+}
+
+static int pulse_buf_op_check(struct ffaudio_buf *b, pa_operation *op)
+{
+	return pulse_op_wait(b->conn, op, 1, &b->err);
+}
 
 ffaudio_buf* ffpulse_alloc()
 {
+	if (gconn == NULL)
+		return NULL;
 	ffaudio_buf *b = ffmem_new(ffaudio_buf);
 	if (b == NULL)
 		return NULL;
+	b->conn = gconn;
 	return b;
 }
 
@@ -303,12 +393,23 @@ void ffpulse_free(ffaudio_buf *b)
 	if (b == NULL)
 		return;
 
+	pulse_lock(b->conn);
+
+	if (b->drain_op != NULL) {
+		pa_operation_cancel(b->drain_op);
+		b->drain_op = NULL;
+	}
+
 	if (b->stm != NULL) {
 		pa_stream_disconnect(b->stm);
+		pa_stream_set_write_callback(b->stm, NULL, NULL);
+		pa_stream_set_read_callback(b->stm, NULL, NULL);
 		pa_stream_unref(b->stm);
+		b->stm = NULL;
 	}
-	if (b->drain_op != NULL)
-		pa_operation_unref(b->drain_op);
+
+	pulse_unlock(b->conn);
+	ffmem_free(b->errmsg);
 	ffmem_free(b);
 }
 
@@ -345,9 +446,16 @@ static ffuint buffer_size(const ffaudio_conf *conf, ffuint msec)
 
 int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 {
+	if ((flags & 0x0f) > FFAUDIO_CAPTURE
+		|| (flags & ~(0x0f | FFAUDIO_O_NONBLOCK))) {
+		b->errfunc = "unsupported flags";
+		b->err = 0;
+		return FFAUDIO_ERROR;
+	}
+
 	int r = FFAUDIO_ERROR;
 	b->nonblock = !!(flags & FFAUDIO_O_NONBLOCK);
-	b->ctx = gctx;
+	b->capture = ((flags & 0x0f) == FFAUDIO_CAPTURE);
 
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
@@ -360,15 +468,15 @@ int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 		return FFAUDIO_EFORMAT;
 	}
 
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	pulse_lock(b->conn);
 
 	pa_sample_spec spec;
 	spec.format = r;
 	spec.rate = conf->sample_rate;
 	spec.channels = conf->channels;
-	b->stm = pa_stream_new(b->ctx->ctx, conf->app_name, &spec, NULL);
+	b->stm = pa_stream_new(b->conn->ctx, conf->app_name, &spec, NULL);
 	if (b->stm == NULL) {
-		b->error = "pa_stream_new";
+		b->errfunc = "pa_stream_new";
 		goto end;
 	}
 
@@ -376,84 +484,107 @@ int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	ffmem_fill(&attr, 0xff, sizeof(pa_buffer_attr));
 	attr.tlength = buffer_size(conf, conf->buffer_length_msec);
 
-	if ((flags & 0x0f) == FFAUDIO_DEV_PLAYBACK) {
+	if (!b->capture) {
 		pa_stream_set_write_callback(b->stm, pulse_on_io, b);
 		pa_stream_connect_playback(b->stm, conf->device_id, &attr, 0, NULL, NULL);
+		b->errfunc = "pa_stream_connect_playback";
 	} else {
 		pa_stream_set_read_callback(b->stm, pulse_on_io, b);
 		pa_stream_connect_record(b->stm, conf->device_id, &attr, 0);
+		b->errfunc = "pa_stream_connect_record";
 	}
 
 	for (;;) {
 		r = pa_stream_get_state(b->stm);
 		if (r == PA_STREAM_READY)
 			break;
-		else if (r == PA_STREAM_FAILED) {
-			b->error = pa_strerror(pa_context_errno(b->ctx->ctx));
+		else if (r == PA_STREAM_TERMINATED || r == PA_STREAM_FAILED) {
 			goto end;
 		}
 
-		pulse_wait(b->ctx);
+		if (PA_CONTEXT_READY != (r = pa_context_get_state(b->conn->ctx))) {
+			r = FFAUDIO_ECONNECTION;
+			goto end;
+		}
+
+		pulse_wait(b->conn);
 	}
 
 	r = 0;
 
 end:
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
+	if (r != 0) {
+		b->err = pa_context_errno(b->conn->ctx);
+		if (b->stm != NULL) {
+			pa_stream_disconnect(b->stm);
+			pa_stream_unref(b->stm);
+			b->stm = NULL;
+		}
+	}
+	pulse_unlock(b->conn);
 	return r;
 }
 
 static void pulse_on_op(pa_stream *s, int success, void *udata)
 {
-	struct pulse_ctx *p = udata;
-	pa_threaded_mainloop_signal(p->mloop, 0);
+	ffaudio_buf *b = udata;
+	FFINT_WRITEONCE(b->cb_op, 1);
+	ffcpu_fence_release();
+	pulse_signal(b->conn);
 }
 
-int pulse_start(ffaudio_buf *b)
+int pulse_resume(ffaudio_buf *b)
 {
 	if (!pa_stream_is_corked(b->stm))
 		return 0;
 
-	pa_operation *op = pa_stream_cork(b->stm, 0, pulse_on_op, b->ctx);
-	pulse_op_wait(b->ctx, op);
-	pa_operation_unref(op);
-	return 0;
+	pa_operation *op = pa_stream_cork(b->stm, 0, pulse_on_op, b);
+	b->errfunc = "pa_stream_cork";
+	return pulse_buf_op_wait(b, op);
 }
 
 int ffpulse_start(ffaudio_buf *b)
 {
-	pa_threaded_mainloop_lock(b->ctx->mloop);
-	pulse_start(b);
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
-	return 0;
+	pulse_lock(b->conn);
+	int r = pulse_resume(b);
+	pulse_unlock(b->conn);
+	return r;
 }
 
 int ffpulse_stop(ffaudio_buf *b)
 {
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	int r = 0;
+	pulse_lock(b->conn);
 
 	if (pa_stream_is_corked(b->stm))
 		goto end;
 
-	pa_operation *op = pa_stream_cork(b->stm, 1, pulse_on_op, b->ctx);
-	pulse_op_wait(b->ctx, op);
-	pa_operation_unref(op);
+	pa_operation *op = pa_stream_cork(b->stm, 1, pulse_on_op, b);
+	b->errfunc = "pa_stream_cork";
+	r = pulse_buf_op_wait(b, op);
 
 end:
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
-	return 0;
+	pulse_unlock(b->conn);
+	return r;
 }
 
 int ffpulse_clear(ffaudio_buf *b)
 {
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	pulse_lock(b->conn);
 
-	pa_operation *op = pa_stream_flush(b->stm, pulse_on_op, b->ctx);
-	pulse_op_wait(b->ctx, op);
-	pa_operation_unref(op);
+	pa_operation *op = pa_stream_flush(b->stm, pulse_on_op, b);
+	b->errfunc = "pa_stream_flush";
+	int r = pulse_buf_op_wait(b, op);
 
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
-	return 0;
+	if (r == 0 && b->drain_op != NULL) {
+		pa_operation_cancel(b->drain_op);
+		pa_operation_unref(b->drain_op);
+		b->drain_op = NULL;
+		b->drained = 1;
+	}
+
+	pulse_unlock(b->conn);
+	return r;
 }
 
 static int pulse_writeonce(ffaudio_buf *b, const void *data, ffsize len)
@@ -463,12 +594,18 @@ static int pulse_writeonce(ffaudio_buf *b, const void *data, ffsize len)
 	void *buf;
 
 	n = pa_stream_writable_size(b->stm);
-	if (n == 0)
+	if (n == 0) {
 		return 0;
+	} else if (n == (ffsize)-1) {
+		b->errfunc = "pa_stream_writable_size";
+		b->err = pa_context_errno(b->conn->ctx);
+		return -FFAUDIO_ERROR;
+	}
 
 	r = pa_stream_begin_write(b->stm, &buf, &n);
 	if (r < 0 || buf == NULL) {
-		b->error = "pa_stream_begin_write";
+		b->errfunc = "pa_stream_begin_write";
+		b->err = pa_context_errno(b->conn->ctx);
 		return -FFAUDIO_ERROR;
 	}
 	n = ffmin(len, n);
@@ -476,61 +613,71 @@ static int pulse_writeonce(ffaudio_buf *b, const void *data, ffsize len)
 	ffmem_copy(buf, data, n);
 
 	if (0 != pa_stream_write(b->stm, buf, n, NULL, 0, PA_SEEK_RELATIVE)) {
-		b->error = "pa_stream_write";
+		b->errfunc = "pa_stream_write";
+		b->err = pa_context_errno(b->conn->ctx);
 		return -FFAUDIO_ERROR;
 	}
 
+	b->drained = 0;
 	return n;
 }
 
 static void pulse_on_io(pa_stream *s, ffsize nbytes, void *udata)
 {
 	ffaudio_buf *b = udata;
-	pa_threaded_mainloop_signal(b->ctx->mloop, 0);
+	FFINT_WRITEONCE(b->cb_io, 1);
+	ffcpu_fence_release();
+	pulse_signal(b->conn);
 }
 
 static int pulse_readonce(ffaudio_buf *b, const void **data)
 {
-	if (b->buf_locked) {
-		b->buf_locked = 0;
-		pa_stream_drop(b->stm);
-	}
+	for (;;) {
+		if (b->buf_locked) {
+			b->buf_locked = 0;
+			pa_stream_drop(b->stm);
+		}
 
-	ffsize len;
-	if (0 != pa_stream_peek(b->stm, data, &len)) {
-		b->error = "pa_stream_peek";
-		return -FFAUDIO_ERROR;
-	}
-	b->buf_locked = 1;
+		ffsize len;
+		if (0 != pa_stream_peek(b->stm, data, &len)) {
+			b->errfunc = "pa_stream_peek";
+			b->err = pa_context_errno(b->conn->ctx);
+			return -FFAUDIO_ERROR;
+		}
+		b->buf_locked = 1;
 
-	if (*data == NULL && len != 0) {
-		b->error = "data holes are not supported";
-		return -FFAUDIO_ERROR;
-	}
+		if (*data == NULL && len != 0) {
+			// data hole
+			continue;
+		}
 
-	return len;
+		return len;
+	}
 }
 
 int ffpulse_write(ffaudio_buf *b, const void *data, ffsize len)
 {
 	int r;
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	pulse_lock(b->conn);
 
 	for (;;) {
 		r = pulse_writeonce(b, data, len);
 		if (r != 0)
 			goto end;
 
-		pulse_start(b);
+		if (0 != (r = pulse_resume(b))) {
+			r = -r;
+			goto end;
+		}
 
 		if (b->nonblock)
 			goto end;
 
-		pulse_wait(b->ctx);
+		pulse_wait(b->conn);
 	}
 
 end:
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
+	pulse_unlock(b->conn);
 	return r;
 }
 
@@ -539,45 +686,52 @@ int ffpulse_drain(ffaudio_buf *b)
 	if (b->drained)
 		return 1;
 
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	pulse_lock(b->conn);
 
 	int r;
-	if (b->drain_op != NULL) {
-		r = pa_operation_get_state(b->drain_op);
-		if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED) {
-			pa_operation_unref(b->drain_op);
-			b->drain_op = NULL;
-			b->drained = 1;
-			r = 1;
-		} else {
-			pulse_start(b);
-			r = 0;
-		}
-
+	if (0 != (r = pulse_resume(b))) {
+		r = -r;
 		goto end;
 	}
 
-	pulse_start(b);
-
-	pa_operation *op = pa_stream_drain(b->stm, pulse_on_op, b->ctx);
-	if (!b->nonblock) {
-		pulse_op_wait(b->ctx, op);
-		pa_operation_unref(op);
-		r = 1;
-	} else {
-		b->drain_op = op;
-		r = 0;
+	pa_operation *op = b->drain_op;
+	if (op == NULL) {
+		op = pa_stream_drain(b->stm, pulse_on_op, b);
 	}
 
+	if (!b->nonblock) {
+		if (0 != (r = pulse_buf_op_wait(b, op))) {
+			b->errfunc = "pa_stream_drain";
+			r = -r;
+			goto end;
+		}
+
+	} else {
+		r = pulse_buf_op_check(b, op);
+		if (r > 0) {
+			b->errfunc = "pa_stream_drain";
+			r = -r;
+			goto end;
+		} else if (r < 0) {
+			b->drain_op = op;
+			r = 0;
+			goto end;
+		}
+	}
+
+	b->drain_op = NULL;
+	b->drained = 1;
+	r = 1;
+
 end:
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
+	pulse_unlock(b->conn);
 	return r;
 }
 
 int ffpulse_read(ffaudio_buf *b, const void **data)
 {
 	int r;
-	pa_threaded_mainloop_lock(b->ctx->mloop);
+	pulse_lock(b->conn);
 
 	for (;;) {
 		r = pulse_readonce(b, data);
@@ -587,11 +741,11 @@ int ffpulse_read(ffaudio_buf *b, const void **data)
 		if (b->nonblock)
 			goto end;
 
-		pulse_wait(b->ctx);
+		pulse_wait(b->conn);
 	}
 
 end:
-	pa_threaded_mainloop_unlock(b->ctx->mloop);
+	pulse_unlock(b->conn);
 	return r;
 }
 
@@ -599,7 +753,11 @@ end:
 Note: libpulse's code calls _exit() when it fails to allocate a memory buffer (/src/pulse/xmalloc.c) */
 const char* ffpulse_error(ffaudio_buf *b)
 {
-	return b->error;
+	if (b->err == 0)
+		return b->errfunc;
+	ffmem_free(b->errmsg);
+	b->errmsg = ffsz_allocfmt("%s: (%u) %s", b->errfunc, b->err, pa_strerror(b->err));
+	return b->errmsg;
 }
 
 

@@ -427,8 +427,11 @@ static OSStatus coreaudio_ioproc_capture(AudioDeviceID device, const AudioTimeSt
 
 	ffaudio_buf *b = udata;
 	ffuint r = ffring_write(b->ring, d, n);
-	if (r != n)
-		b->overrun = 1;
+	if (r != n) {
+		r += ffring_write(b->ring, (char*)d + r, n - r);
+		if (r != n)
+			b->overrun = 1;
+	}
 	return 0;
 }
 
@@ -438,7 +441,7 @@ static int coreaudio_readonce(ffaudio_buf *b, const void **buffer)
 		ffring_read_finish(b->ring, b->rhead);
 	}
 
-	b->rhead = ffring_read_begin(b->ring, n, &b->buf_locked, NULL);
+	b->rhead = ffring_read_begin(b->ring, -1, &b->buf_locked, NULL);
 	*buffer = b->buf_locked.ptr;
 	return b->buf_locked.len;
 }

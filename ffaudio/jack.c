@@ -102,7 +102,8 @@ const char* ffjack_dev_error(ffaudio_dev *d)
 
 struct ffaudio_buf {
 	jack_port_t *port;
-	ffring ring;
+	ffring *ring;
+	ffring_head rhead;
 	ffstr chunk;
 	ffuint period_ms;
 	ffuint started;
@@ -125,7 +126,7 @@ static void _jack_close(ffaudio_buf *b)
 {
 	if (b->port != NULL)
 		jack_port_unregister(gclient, b->port);
-	ffring_free(&b->ring);
+	ffring_free(b->ring);
 }
 
 void ffjack_free(ffaudio_buf *b)
@@ -194,7 +195,7 @@ int ffjack_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	ffsize bufsize = jack_get_buffer_size(gclient);
 	bufsize *= sizeof(float);
 	conf->buffer_length_msec = buffer_size_to_msec(conf, bufsize);
-	if (NULL == ffring_create(&b->ring, bufsize * 2)) {
+	if (NULL == (b->ring = ffring_alloc(bufsize * 2, FFRING_1_READER | FFRING_1_WRITER))) {
 		b->err = "ffring_create";
 		goto end;
 	}
@@ -223,7 +224,7 @@ int ffjack_stop(ffaudio_buf *b)
 
 int ffjack_clear(ffaudio_buf *b)
 {
-	ffring_clear(&b->ring);
+	ffring_reset(b->ring);
 	return 0;
 }
 
@@ -243,9 +244,12 @@ static int _jack_process(jack_nframes_t nframes, void *arg)
 
 	const float *d = jack_port_get_buffer(b->port, nframes);
 	ffsize n = nframes * sizeof(float);
-	ffsize r = ffring_write(&b->ring, d, n);
-	if (r != n)
-		b->overrun = 1;
+	ffuint r = ffring_write(b->ring, d, n);
+	if (r != n) {
+		r += ffring_write(b->ring, (char*)d + r, n - r);
+		if (r != n)
+			b->overrun = 1;
+	}
 
 	return 0;
 }
@@ -258,9 +262,9 @@ static int _jack_readonce(ffaudio_buf *b, const void **data)
 	}
 
 	if (b->chunk.len != 0)
-		ffring_release_read(&b->ring, b->chunk.len);
+		ffring_read_finish(b->ring, b->rhead);
 
-	b->chunk = ffring_acquire_read(&b->ring);
+	b->rhead = ffring_read_begin(b->ring, -1, &b->chunk, NULL);
 	if (b->chunk.len == 0) {
 		if (!b->started)
 			b->started = 1;

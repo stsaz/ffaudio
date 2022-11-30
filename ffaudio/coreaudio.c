@@ -335,7 +335,7 @@ int ffcoreaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
 	ffuint bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
-	if (NULL == (b->ring = ffring_alloc(bufsize, FFRINGBUF_1_READER | FFRINGBUF_1_WRITER))) {
+	if (NULL == (b->ring = ffring_alloc(bufsize, FFRING_1_READER | FFRING_1_WRITER))) {
 		b->errfunc = "ffring_alloc";
 		goto end;
 	}
@@ -469,7 +469,7 @@ int ffcoreaudio_drain(ffaudio_buf *b)
 	for (;;) {
 		ffstr s;
 		ffsize free;
-		ffsize r = ffring_write_begin(b->ring, 0, &s, &free);
+		ffring_write_begin(b->ring, 0, &s, &free);
 
 		if (free == b->ring->cap) {
 			(void) ffcoreaudio_stop(b);

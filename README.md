@@ -25,6 +25,11 @@ Contents:
 
 Supports:
 
+* AAudio (Android>=26)
+	* formats: int16/float
+	* mode: shared/exclusive
+	* perf mode: power-save/low-latency
+	* use "High Priority Callback"
 * ALSA (Linux):
 	* "hw" and "plughw" modes
 * CoreAudio (macOS)
@@ -36,7 +41,7 @@ Supports:
 	* shared and exclusive modes
 	* loopback mode (record what you hear)
 
-Note: JACK playback is not implemented.
+Note: AAudio & JACK playback is not implemented.
 
 
 ## How to use

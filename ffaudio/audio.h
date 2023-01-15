@@ -73,7 +73,7 @@ enum FFAUDIO_OPEN {
 	'ffaudio_conf.on_event()' will be called to notify user */
 	FFAUDIO_O_NONBLOCK = 0x10,
 
-	/** Open device in exclusive mode (WASAPI) */
+	/** Open device in exclusive mode (AAudio, WASAPI) */
 	FFAUDIO_O_EXCLUSIVE = 0x20,
 
 	/** Open "hw" device, instead of "plughw" (ALSA) */
@@ -81,6 +81,10 @@ enum FFAUDIO_OPEN {
 
 	/** Return FFAUDIO_ESYNC when underrun/overrun is detected */
 	FFAUDIO_O_UNSYNC_NOTIFY = 0x80,
+
+	/** Perfomance mode (AAudio) */
+	FFAUDIO_O_POWER_SAVE = 0x0100,
+	FFAUDIO_O_LOW_LATENCY = 0x0200,
 };
 
 typedef struct ffaudio_init_conf {
@@ -111,6 +115,14 @@ typedef struct ffaudio_conf {
 	0: use default size
 	On return from open(), this is the actual buffer length from audio subsystem */
 	ffuint buffer_length_msec;
+
+	/** In a non-blocking mode AAudio calls this function when:
+	* some data becomes available in audio buffer for reading (recording);
+	* free space is available in audio buffer for writing (playback).
+	WARNING: usually this is just for sending a wakeup signal to the main thread;
+	 don't perform I/O inside this function! */
+	void (*on_event)(void*);
+	void *udata;
 } ffaudio_conf;
 
 typedef struct ffaudio_dev ffaudio_dev;
@@ -230,6 +242,7 @@ typedef struct ffaudio_interface {
 } ffaudio_interface;
 
 /** API for direct use */
+FF_EXTERN const ffaudio_interface ffaaudio;
 FF_EXTERN const ffaudio_interface ffalsa;
 FF_EXTERN const ffaudio_interface ffpulse;
 FF_EXTERN const ffaudio_interface ffjack;

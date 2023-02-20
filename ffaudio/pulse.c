@@ -359,8 +359,13 @@ struct ffaudio_buf {
 	ffuint nonblock;
 	ffuint drained;
 	pa_operation *drain_op;
-	ffuint cb_io;
-	ffuint cb_op;
+
+	/** Remember the signals received by our PA callbacks
+	1: I/O-signal
+	2: stream-state-changed
+	4: operation-complete
+	*/
+	ffuint cb_signals;
 
 	int err; // pa_context_errno()
 	const char *errfunc; // PA function name or ffaudio error message
@@ -402,6 +407,7 @@ void ffpulse_free(ffaudio_buf *b)
 
 	if (b->stm != NULL) {
 		pa_stream_disconnect(b->stm);
+		pa_stream_set_state_callback(b->stm, NULL, NULL);
 		pa_stream_set_write_callback(b->stm, NULL, NULL);
 		pa_stream_set_read_callback(b->stm, NULL, NULL);
 		pa_stream_unref(b->stm);
@@ -436,6 +442,14 @@ static int pulse_fmt(ffuint f)
 }
 
 static void pulse_on_io(pa_stream *s, ffsize nbytes, void *udata);
+
+/** PA manual: "called whenever the state of the stream changes" */
+static void pulse_on_change(pa_stream *s, void *udata)
+{
+	ffaudio_buf *b = udata;
+	b->cb_signals |= 2;
+	pulse_signal(b->conn);
+}
 
 /** msec -> bytes:
 rate*width*channels*msec/1000 */
@@ -484,6 +498,7 @@ int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	ffmem_fill(&attr, 0xff, sizeof(pa_buffer_attr));
 	attr.tlength = buffer_size(conf, conf->buffer_length_msec);
 
+	pa_stream_set_state_callback(b->stm, pulse_on_change, b);
 	if (!b->capture) {
 		pa_stream_set_write_callback(b->stm, pulse_on_io, b);
 		pa_stream_connect_playback(b->stm, conf->device_id, &attr, 0, NULL, NULL);
@@ -528,8 +543,7 @@ end:
 static void pulse_on_op(pa_stream *s, int success, void *udata)
 {
 	ffaudio_buf *b = udata;
-	FFINT_WRITEONCE(b->cb_op, 1);
-	ffcpu_fence_release();
+	b->cb_signals |= 4;
 	pulse_signal(b->conn);
 }
 
@@ -625,8 +639,7 @@ static int pulse_writeonce(ffaudio_buf *b, const void *data, ffsize len)
 static void pulse_on_io(pa_stream *s, ffsize nbytes, void *udata)
 {
 	ffaudio_buf *b = udata;
-	FFINT_WRITEONCE(b->cb_io, 1);
-	ffcpu_fence_release();
+	b->cb_signals |= 1;
 	pulse_signal(b->conn);
 }
 

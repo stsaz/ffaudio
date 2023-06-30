@@ -192,6 +192,7 @@ static const ffushort fmts[] = {
 	FFAUDIO_F_INT24,
 	FFAUDIO_F_INT32,
 	FFAUDIO_F_FLOAT32,
+	FFAUDIO_F_FLOAT64,
 };
 static const ffuint alsa_fmts[] = {
 	SND_PCM_FORMAT_S8,
@@ -199,6 +200,7 @@ static const ffuint alsa_fmts[] = {
 	SND_PCM_FORMAT_S24_3LE,
 	SND_PCM_FORMAT_S32_LE,
 	SND_PCM_FORMAT_FLOAT_LE,
+	SND_PCM_FORMAT_FLOAT64_LE,
 };
 
 static int alsa_find_format(ffuint f)

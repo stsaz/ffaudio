@@ -437,7 +437,7 @@ static int pulse_fmt(ffuint f)
 {
 	int r;
 	if (0 > (r = ffarrint16_find(afmt, FF_COUNT(afmt), f)))
-		return -FFAUDIO_F_INT16;
+		return -FFAUDIO_F_FLOAT32;
 	return afmt_pa[r];
 }
 

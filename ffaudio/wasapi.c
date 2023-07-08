@@ -224,6 +224,7 @@ struct ffaudio_buf {
 	ffuint started;
 	ffuint nonblock;
 	ffuint notify_unsync;
+	ffuint user_driven;
 
 	const char *errfunc;
 	char *errmsg;
@@ -687,6 +688,10 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 		conf->buffer_length_msec *= 2;
 	}
 	b->max_ms = conf->buffer_length_msec;
+	if (events && (flags & FFAUDIO_O_USER_EVENTS)) {
+		b->user_driven = 1;
+		conf->event_h = b->event;
+	}
 	rc = 0;
 
 end:
@@ -901,10 +906,10 @@ static int wasapi_dev_status(ffaudio_buf *b)
 }
 
 /*
-In exclusive mode we have 2 buffers (or 2 halves of the buffer) which we fill one by one
-When both buffers are filled, we start the stream if it's not started
-Then we wait for the event to signal which means that 1 buffer has been played
-On underrun the sound continues to play in a loop, so the manual stop and reset are required
+In exclusive mode we have 2 buffers (or 2 halves of the buffer) which we fill one by one.
+When both buffers are filled, we start the stream if it's not started.
+Then we wait for the event to signal which means that 1 buffer has been played.
+On underrun the sound continues to play in a loop, so the manual stop and reset are required.
 */
 static int wasapi_write_excl(ffaudio_buf *b, const void *data, ffsize len)
 {
@@ -922,6 +927,9 @@ static int wasapi_write_excl(ffaudio_buf *b, const void *data, ffsize len)
 
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
+
+		if (b->user_driven)
+			return 0;
 
 		ffuint t = (b->nonblock) ? 0 : b->max_ms;
 		r = WaitForSingleObject(b->event, t);
@@ -942,9 +950,9 @@ static int wasapi_write_excl(ffaudio_buf *b, const void *data, ffsize len)
 }
 
 /*
-In shared mode with AUDCLNT_STREAMFLAGS_EVENTCALLBACK too many events from WASAPI may be triggerred, regardless of buffer size
-This behaviour generates many unnecessary context switches while all we need is to be notified just 2 times per buffer
-Furthermore, AUDCLNT_STREAMFLAGS_EVENTCALLBACK doesn't work together with AUDCLNT_STREAMFLAGS_LOOPBACK
+In shared mode with AUDCLNT_STREAMFLAGS_EVENTCALLBACK too many events from WASAPI may be triggerred, regardless of buffer size.
+This behaviour generates many unnecessary context switches while all we need is to be notified just 2 times per buffer.
+Furthermore, AUDCLNT_STREAMFLAGS_EVENTCALLBACK doesn't work together with AUDCLNT_STREAMFLAGS_LOOPBACK.
 */
 int ffwasapi_write(ffaudio_buf *b, const void *data, ffsize len)
 {
@@ -977,6 +985,9 @@ static int wasapi_drain_excl(ffaudio_buf *b)
 	for (;;) {
 		if (b->filled_buffers == 0)
 			return 1;
+
+		if (b->user_driven)
+			return 0;
 
 		r = WaitForSingleObject(b->event, b->max_ms);
 		if (r != WAIT_OBJECT_0) {
@@ -1035,6 +1046,9 @@ static int wasapi_read_excl(ffaudio_buf *b, const void **data)
 		if (0 != (r = ffwasapi_start(b)))
 			return -r;
 
+		if (b->user_driven)
+			return 0;
+
 		ffuint t = (b->nonblock) ? 0 : b->max_ms;
 		r = WaitForSingleObject(b->event, t);
 		if (r != WAIT_OBJECT_0) {
@@ -1076,6 +1090,16 @@ int ffwasapi_read(ffaudio_buf *b, const void **data)
 
 		Sleep(b->period_ms);
 	}
+}
+
+void ffwasapi_signal(ffaudio_buf *b)
+{
+	if (!b->user_driven) return;
+
+	if (b->capt)
+		b->filled_buffers++;
+	else
+		b->filled_buffers--;
 }
 
 
@@ -1175,4 +1199,5 @@ const struct ffaudio_interface ffwasapi = {
 	ffwasapi_write,
 	ffwasapi_drain,
 	ffwasapi_read,
+	ffwasapi_signal,
 };

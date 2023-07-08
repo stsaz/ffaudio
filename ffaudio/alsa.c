@@ -629,4 +629,5 @@ const struct ffaudio_interface ffalsa = {
 	ffalsa_write,
 	ffalsa_drain,
 	ffalsa_read,
+	NULL,
 };

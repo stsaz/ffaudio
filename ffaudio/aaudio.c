@@ -333,4 +333,5 @@ const struct ffaudio_interface ffaaudio = {
 	ffaaudio_clear,
 	ffaaudio_write, ffaaudio_drain,
 	ffaaudio_read,
+	NULL,
 };

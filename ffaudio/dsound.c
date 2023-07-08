@@ -601,4 +601,5 @@ const struct ffaudio_interface ffdsound = {
 	ffdsound_write,
 	ffdsound_drain,
 	ffdsound_read,
+	NULL,
 };

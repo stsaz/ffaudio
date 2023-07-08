@@ -524,4 +524,5 @@ const struct ffaudio_interface ffcoreaudio = {
 	ffcoreaudio_write,
 	ffcoreaudio_drain,
 	ffcoreaudio_read,
+	NULL,
 };

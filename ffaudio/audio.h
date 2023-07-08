@@ -86,6 +86,10 @@ enum FFAUDIO_OPEN {
 	/** Perfomance mode (AAudio) */
 	FFAUDIO_O_POWER_SAVE = 0x0100,
 	FFAUDIO_O_LOW_LATENCY = 0x0200,
+
+	/** WASAPI will set 'ffaudio_conf.event_h'
+	 and let the user perform the signal-delivering work via signal() */
+	FFAUDIO_O_USER_EVENTS = 0x0400,
 };
 
 typedef struct ffaudio_init_conf {
@@ -124,6 +128,13 @@ typedef struct ffaudio_conf {
 	 don't perform I/O inside this function! */
 	void (*on_event)(void*);
 	void *udata;
+
+#ifdef FF_WIN
+	/** For non-blocking exclusive mode WASAPI sets this to a newly created Windows Event object.
+	User puts this event into WaitFor...Object()-family functions to receive immediate events.
+	The handle is closed by ffaudio_interface.free(). */
+	HANDLE event_h;
+#endif
 } ffaudio_conf;
 
 typedef struct ffaudio_dev ffaudio_dev;
@@ -240,6 +251,10 @@ typedef struct ffaudio_interface {
 	    WASAPI exclusive mode: program may crash while accessing the buffer because Windows unmaps the memory region before we can Release() the buffer.
 	  * -FFAUDIO_ESYNC: Overrun detected (not a fatal error) */
 	int (*read)(ffaudio_buf *b, const void **buffer);
+
+	/** WASAPI: user calls this function when 'event_h' signals.
+	This is required for ffaudio to keep track on the buffer's filled data. */
+	void (*signal)(ffaudio_buf *b);
 } ffaudio_interface;
 
 /** API for direct use */

@@ -234,9 +234,4 @@ There are more additional arguments that you can pass to these executable files.
 
 ## License
 
-This code is absolutely free.
-
-
-## History
-
-This is actually a refactored code from ff library which is a base for fmedia.  More history can be found in `github.com/stsaz/ff` repo.
+ffaudio is in the public-domain.

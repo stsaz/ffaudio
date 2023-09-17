@@ -10,22 +10,22 @@ FFBASE_DIR := ../../ffbase
 FFAUDIO_DIR := ..
 FFAUDIO_API := # supported values: alsa, pulse, jack, wasapi, dsound, coreaudio, oss
 C := gcc -c
-LINKER := gcc
+LINK := gcc
 CFLAGS := -O2 -I$(FFAUDIO_DIR) -I$(FFBASE_DIR)
 
-ifeq ($(FFAUDIO_API),alsa)
+ifeq "$(FFAUDIO_API)" "alsa"
 	FFAUDIO_LINKFLAGS := -lasound
-else ifeq ($(FFAUDIO_API),pulse)
+else ifeq "$(FFAUDIO_API)" "pulse"
 	FFAUDIO_LINKFLAGS := -lpulse
-else ifeq ($(FFAUDIO_API),jack)
+else ifeq "$(FFAUDIO_API)" "jack"
 	FFAUDIO_LINKFLAGS := -ljack
-else ifeq ($(FFAUDIO_API),wasapi)
+else ifeq "$(FFAUDIO_API)" "wasapi"
 	FFAUDIO_LINKFLAGS := -lole32
-else ifeq ($(FFAUDIO_API),dsound)
+else ifeq "$(FFAUDIO_API)" "dsound"
 	FFAUDIO_LINKFLAGS := -ldsound -ldxguid
-else ifeq ($(FFAUDIO_API),coreaudio)
+else ifeq "$(FFAUDIO_API)" "coreaudio"
 	FFAUDIO_LINKFLAGS := -framework CoreFoundation -framework CoreAudio
-else ifeq ($(FFAUDIO_API),oss)
+else ifeq "$(FFAUDIO_API)" "oss"
 	FFAUDIO_LINKFLAGS := -lm
 endif
 FFAUDIO_FILE := $(FFAUDIO_DIR)/ffaudio/$(FFAUDIO_API).c
@@ -40,4 +40,4 @@ player.o: ./player.c $(FFAUDIO_DIR)/ffaudio/audio.h
 	$(C) $(CFLAGS) $(FFAUDIO_CFLAGS) $< -o $@
 
 ffaudio-player: ./player.o ./ffaudio-api.o
-	$(LINKER) $(FFAUDIO_LINKFLAGS) $+ -o $@
+	$(LINK) $+ $(FFAUDIO_LINKFLAGS) -o $@

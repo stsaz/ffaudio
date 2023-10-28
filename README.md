@@ -148,86 +148,103 @@ Use the neceessary linker flags for the audio API, described below.
 
 Configure your building script to compile particular C file and use appropriate link flags.
 
-ALSA:
-* Install package `libalsa-devel`
-* Compile `ffaudio/alsa.c`
-* Link with `-lasound`
+* ALSA:
 
-PulseAudio:
-* Install package `libpulse-devel`
-* Compile `ffaudio/pulse.c`
-* Link with `-lpulse`
+	* Install package `libalsa-devel`
+	* Compile `ffaudio/alsa.c`
+	* Link with `-lasound`
 
-JACK:
-* Install package `jack-audio-connection-kit-devel`
-* Compile `ffaudio/jack.c`
-* Link with `-ljack`
+* PulseAudio:
 
-WASAPI:
-* Compile `ffaudio/wasapi.c`
-* Link with `-lole32`
+	* Install package `libpulse-devel`
+	* Compile `ffaudio/pulse.c`
+	* Link with `-lpulse`
 
-DirectSound:
-* Compile `ffaudio/dsound.c`
-* Link with `-ldsound -ldxguid`
+* JACK:
 
-CoreAudio:
-* Compile `ffaudio/coreaudio.c`
-* Link with `-framework CoreFoundation -framework CoreAudio`
+	* Install package `jack-audio-connection-kit-devel`
+	* Compile `ffaudio/jack.c`
+	* Link with `-ljack`
 
-OSS:
-* Compile `ffaudio/oss.c`
-* Link with `-lm`
+* WASAPI:
+
+	* Compile `ffaudio/wasapi.c`
+	* Link with `-lole32`
+
+* DirectSound:
+
+	* Compile `ffaudio/dsound.c`
+	* Link with `-ldsound -ldxguid`
+
+* CoreAudio:
+
+	* Compile `ffaudio/coreaudio.c`
+	* Link with `-framework CoreFoundation -framework CoreAudio`
+
+* OSS:
+
+	* Compile `ffaudio/oss.c`
+	* Link with `-lm`
 
 
 ## How to test
 
-	git clone https://github.com/stsaz/ffbase
-	git clone https://github.com/stsaz/ffaudio
-	cd ffaudio/test
+```sh
+git clone https://github.com/stsaz/ffbase
+git clone https://github.com/stsaz/ffaudio
+cd ffaudio/test
+```
 
-Linux:
+* Linux:
 
-	make -B FFAUDIO_API=alsa
-	./ffaudio-alsa list
-	./ffaudio-alsa record 2>file.raw
-	./ffaudio-alsa play <file.raw
+```sh
+make -B FFAUDIO_API=alsa
+./ffaudio-alsa list
+./ffaudio-alsa record 2>file.raw
+./ffaudio-alsa play <file.raw
 
-	make -B FFAUDIO_API=pulse
-	./ffaudio-pulse list
-	./ffaudio-pulse record 2>file.raw
-	./ffaudio-pulse play <file.raw
+make -B FFAUDIO_API=pulse
+./ffaudio-pulse list
+./ffaudio-pulse record 2>file.raw
+./ffaudio-pulse play <file.raw
 
-	make -B FFAUDIO_API=jack
-	./ffaudio-jack list
-	./ffaudio-jack record 2>file.raw
-	# [not implemented] ./ffaudio-jack play <file.raw
+make -B FFAUDIO_API=jack
+./ffaudio-jack list
+./ffaudio-jack record 2>file.raw
+# [not implemented] ./ffaudio-jack play <file.raw
+```
 
-Windows:
+* Windows:
 
-	make -B FFAUDIO_API=wasapi
-	.\ffaudio-wasapi.exe list
-	.\ffaudio-wasapi.exe record 2>file.raw
-	.\ffaudio-wasapi.exe play <file.raw
+```
+make -B FFAUDIO_API=wasapi
+.\ffaudio-wasapi.exe list
+.\ffaudio-wasapi.exe record 2>file.raw
+.\ffaudio-wasapi.exe play <file.raw
 
-	make -B FFAUDIO_API=dsound
-	.\ffaudio-dsound.exe list
-	.\ffaudio-dsound.exe record 2>file.raw
-	.\ffaudio-dsound.exe play <file.raw
+make -B FFAUDIO_API=dsound
+.\ffaudio-dsound.exe list
+.\ffaudio-dsound.exe record 2>file.raw
+.\ffaudio-dsound.exe play <file.raw
+```
 
-macOS:
+* macOS:
 
-	make -B FFAUDIO_API=coreaudio
-	./ffaudio-coreaudio list
-	./ffaudio-coreaudio record 2>file.raw
-	./ffaudio-coreaudio play <file.raw
+```sh
+make -B FFAUDIO_API=coreaudio
+./ffaudio-coreaudio list
+./ffaudio-coreaudio record 2>file.raw
+./ffaudio-coreaudio play <file.raw
+```
 
-FreeBSD:
+* FreeBSD:
 
-	make -B FFAUDIO_API=oss
-	./ffaudio-oss list
-	./ffaudio-oss record 2>file.raw
-	./ffaudio-oss play <file.raw
+```sh
+make -B FFAUDIO_API=oss
+./ffaudio-oss list
+./ffaudio-oss record 2>file.raw
+./ffaudio-oss play <file.raw
+```
 
 There are more additional arguments that you can pass to these executable files.
 

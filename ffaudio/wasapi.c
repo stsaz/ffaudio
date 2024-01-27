@@ -452,7 +452,7 @@ static int wasapi_find_fmt(IAudioClient *client, IMMDevice *dev, ffaudio_conf *c
 		FFAUDIO_F_INT24,
 		FFAUDIO_F_INT24_4,
 		FFAUDIO_F_INT16,
-		FFAUDIO_F_INT8,
+		FFAUDIO_F_UINT8,
 	};
 
 	f.format = conf->format;

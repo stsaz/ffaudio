@@ -188,6 +188,7 @@ void ffalsa_free(ffaudio_buf *b)
 
 static const ffushort fmts[] = {
 	FFAUDIO_F_INT8,
+	FFAUDIO_F_UINT8,
 	FFAUDIO_F_INT16,
 	FFAUDIO_F_INT24,
 	FFAUDIO_F_INT32,
@@ -196,6 +197,7 @@ static const ffushort fmts[] = {
 };
 static const ffuint alsa_fmts[] = {
 	SND_PCM_FORMAT_S8,
+	SND_PCM_FORMAT_U8,
 	SND_PCM_FORMAT_S16_LE,
 	SND_PCM_FORMAT_S24_3LE,
 	SND_PCM_FORMAT_S32_LE,

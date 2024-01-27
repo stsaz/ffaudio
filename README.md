@@ -2,7 +2,7 @@
 
 ffaudio is a fast cross-platform interface for Audio Input/Output for C and C++.
 
-It provides advanced features for complex apps like [fmedia audio player/recorder](https://github.com/stsaz/fmedia), or it can be used by tiny programs like [wav player example](./wav-player-example/player.c).
+It provides advanced features for complex apps like [phiola audio player/recorder](https://github.com/stsaz/phiola), or it can be used by tiny programs like [wav player example](./wav-player-example/player.c).
 
 Contents:
 

@@ -420,12 +420,14 @@ void ffpulse_free(ffaudio_buf *b)
 }
 
 static const ffushort afmt[] = {
+	FFAUDIO_F_UINT8,
 	FFAUDIO_F_INT16,
 	FFAUDIO_F_INT24,
 	FFAUDIO_F_INT32,
 	FFAUDIO_F_FLOAT32,
 };
 static const ffuint afmt_pa[] = {
+	PA_SAMPLE_U8,
 	PA_SAMPLE_S16LE,
 	PA_SAMPLE_S24LE,
 	PA_SAMPLE_S32LE,

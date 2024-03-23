@@ -7,6 +7,7 @@
 #include <ffbase/ring.h>
 
 #include <jack/jack.h>
+#include <time.h>
 
 
 static jack_client_t *gclient;
@@ -285,6 +286,15 @@ int ffjack_drain(ffaudio_buf *b)
 	return 1;
 }
 
+static int _ff_sleep(ffuint msec)
+{
+	struct timespec ts = {
+		.tv_sec = msec / 1000,
+		.tv_nsec = (msec % 1000) * 1000000,
+	};
+	return nanosleep(&ts, NULL);
+}
+
 int ffjack_read(ffaudio_buf *b, const void **data)
 {
 	for (;;) {
@@ -295,7 +305,7 @@ int ffjack_read(ffaudio_buf *b, const void **data)
 		if (b->nonblock)
 			return 0;
 
-		usleep(b->period_ms * 1000);
+		_ff_sleep(b->period_ms);
 	}
 }
 

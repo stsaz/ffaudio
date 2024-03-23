@@ -7,6 +7,7 @@
 #include <ffbase/stringz.h>
 
 #include <alsa/asoundlib.h>
+#include <time.h>
 
 
 int ffalsa_init(ffaudio_init_conf *conf)
@@ -357,6 +358,15 @@ end:
 	return rc;
 }
 
+static int _ff_sleep(ffuint msec)
+{
+	struct timespec ts = {
+		.tv_sec = msec / 1000,
+		.tv_nsec = (msec % 1000) * 1000000,
+	};
+	return nanosleep(&ts, NULL);
+}
+
 static int alsa_handle_error(ffaudio_buf *b, int r)
 {
 	switch (r) {
@@ -366,7 +376,7 @@ static int alsa_handle_error(ffaudio_buf *b, int r)
 
 	case -ESTRPIPE:
 		while (-EAGAIN == (r = snd_pcm_resume(b->pcm))) {
-			usleep(b->period_ms*1000);
+			_ff_sleep(b->period_ms);
 		}
 		if (r == 0)
 			return 0;
@@ -551,7 +561,7 @@ int ffalsa_write(ffaudio_buf *b, const void *data, ffsize len)
 		if (b->nonblock)
 			return 0;
 
-		usleep(b->period_ms*1000);
+		_ff_sleep(b->period_ms);
 	}
 
 	if (b->err == -ENODEV)
@@ -572,7 +582,7 @@ int ffalsa_drain(ffaudio_buf *b)
 		if (b->nonblock)
 			return 0;
 
-		usleep(b->period_ms*1000);
+		_ff_sleep(b->period_ms);
 	}
 }
 
@@ -594,7 +604,7 @@ int ffalsa_read(ffaudio_buf *b, const void **data)
 		if (b->nonblock)
 			return 0;
 
-		usleep(b->period_ms*1000);
+		_ff_sleep(b->period_ms);
 	}
 
 	if (b->err == -ENODEV)

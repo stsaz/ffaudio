@@ -148,43 +148,16 @@ Use the neceessary linker flags for the audio API, described below.
 
 Configure your building script to compile particular C file and use appropriate link flags.
 
-* ALSA:
-
-	* Install package `libalsa-devel`
-	* Compile `ffaudio/alsa.c`
-	* Link with `-lasound`
-
-* PulseAudio:
-
-	* Install package `libpulse-devel`
-	* Compile `ffaudio/pulse.c`
-	* Link with `-lpulse`
-
-* JACK:
-
-	* Install package `jack-audio-connection-kit-devel`
-	* Compile `ffaudio/jack.c`
-	* Link with `-ljack`
-
-* WASAPI:
-
-	* Compile `ffaudio/wasapi.c`
-	* Link with `-lole32`
-
-* DirectSound:
-
-	* Compile `ffaudio/dsound.c`
-	* Link with `-ldsound -ldxguid`
-
-* CoreAudio:
-
-	* Compile `ffaudio/coreaudio.c`
-	* Link with `-framework CoreFoundation -framework CoreAudio`
-
-* OSS:
-
-	* Compile `ffaudio/oss.c`
-	* Link with `-lm`
+| API | Package Dependency | Compile | Linker Flags |
+| --- | --- | --- | --- |
+| AAudio      | - | `ffaudio/aaudio.c` | `-laaudio` |
+| ALSA        | `libalsa-devel` | `ffaudio/alsa.c` | `-lasound` |
+| PulseAudio  | `libpulse-devel` | `ffaudio/pulse.c` | `-lpulse` |
+| JACK        | `jack-audio-connection-kit-devel` | `ffaudio/jack.c` | `-ljack` |
+| WASAPI      | - | `ffaudio/wasapi.c` | `-lole32` |
+| DirectSound | - | `ffaudio/dsound.c` | `-ldsound -ldxguid` |
+| CoreAudio   | - | `ffaudio/coreaudio.c` | `-framework CoreFoundation -framework CoreAudio` |
+| OSS         | - | `ffaudio/oss.c` | `-lm` |
 
 
 ## How to test

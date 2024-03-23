@@ -6,6 +6,9 @@
 #include <ffbase/stringz.h>
 #include <test/std.h>
 #include <test/test.h>
+#ifdef FF_LINUX
+#include <time.h>
+#endif
 
 
 static inline void ffthread_sleep(ffuint msec)
@@ -13,7 +16,11 @@ static inline void ffthread_sleep(ffuint msec)
 #ifdef FF_WIN
 	Sleep(msec);
 #else
-	usleep(msec * 1000);
+	struct timespec ts = {
+		.tv_sec = msec / 1000,
+		.tv_nsec = (msec % 1000) * 1000000,
+	};
+	nanosleep(&ts, NULL);
 #endif
 }
 

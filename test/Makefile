@@ -5,13 +5,20 @@ FFBASE_DIR := $(ROOT_DIR)/ffbase
 FFAUDIO_DIR := $(ROOT_DIR)/ffaudio
 
 include $(FFBASE_DIR)/conf.mk
+ifeq "$(SYS)" "android"
+	NDK_DIR := $(SDK_DIR)/ndk/$(NDK_VER)
+	include $(FFAUDIO_DIR)/test/andk.mk
+endif
 
+TEST_ANDROID := ffaudio-aaudio
 TEST_WIN := ffaudio-dsound.exe ffaudio-wasapi.exe
 TEST_LINUX := ffaudio-alsa ffaudio-pulse
 TEST_MAC := ffaudio-coreaudio
 TEST_FBSD := ffaudio-oss
 
-ifeq "$(FFAUDIO_API)" "alsa"
+ifeq "$(FFAUDIO_API)" "aaudio"
+	FFAUDIO_LINKFLAGS := -laaudio
+else ifeq "$(FFAUDIO_API)" "alsa"
 	FFAUDIO_LINKFLAGS := -lasound
 else ifeq "$(FFAUDIO_API)" "pulse"
 	FFAUDIO_LINKFLAGS := -lpulse
@@ -28,10 +35,13 @@ else ifeq "$(FFAUDIO_API)" "oss"
 endif
 FFAUDIO_CFLAGS += -DFFAUDIO_INTERFACE_DEFAULT_PTR="&ff$(FFAUDIO_API)"
 
+CFLAGS += $(A_CFLAGS)
 CFLAGS += -MMD -MP -I$(FFAUDIO_DIR) -I$(FFBASE_DIR) \
-	-Wall -Wextra -Wno-unused-parameter -fvisibility=hidden
+	-std=gnu99 \
+	-Wall -Wextra -Wno-unused-parameter -Wno-multichar \
+	-fvisibility=hidden
 CFLAGS += -DFF_DEBUG -O0 -g
-CFLAGS += -std=gnu99
+LINKFLAGS += $(A_LINKFLAGS)
 # CFLAGS += -fsanitize=address
 # LINKFLAGS += -fsanitize=address
 

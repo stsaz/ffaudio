@@ -266,17 +266,112 @@ static aaudio_data_callback_result_t on_play(AAudioStream *stream, void *userDat
 {
 	ffaudio_buf *b = userData;
 	b->on_event(b->udata);
+
+	u_char *d = audioData;
+	unsigned n = numFrames * b->frame_size;
+	ffstr s;
+	ffring_head h = ffring_read_begin(b->ring, n, &s, NULL);
+	if (s.len == 0)
+		goto end;
+	ffmem_copy(d, s.ptr, s.len);
+	ffring_read_finish(b->ring, h);
+
+	d += s.len;
+	n -= s.len;
+	if (n != 0) {
+		h = ffring_read_begin(b->ring, n, &s, NULL);
+		if (s.len == 0)
+			goto end;
+		ffmem_copy(d, s.ptr, s.len);
+		ffring_read_finish(b->ring, h);
+	}
 	return 0;
+
+end:
+	if (n != 0) {
+		ffmem_fill(d, 0, n);
+		b->overrun = 1;
+	}
+	return 0;
+}
+
+static int aaudio_write_some(ffaudio_buf *b, const void *data, size_t len)
+{
+	unsigned r = ffring_write(b->ring, data, len);
+	if (r != len) {
+		r += ffring_write(b->ring, (char*)data + r, len - r);
+	}
+	return r;
+}
+
+static int sleep_msec(unsigned msec)
+{
+	struct timespec ts = {
+		.tv_sec = msec / 1000,
+		.tv_nsec = (msec % 1000) * 1000000,
+	};
+	return nanosleep(&ts, NULL);
 }
 
 static int ffaaudio_write(ffaudio_buf *b, const void *data, ffsize len)
 {
-	return -FFAUDIO_ERROR;
+	for (;;) {
+
+		if (b->dev_error != 0) {
+			b->err = "I/O error";
+			b->errcode = b->dev_error;
+			return -FFAUDIO_ERROR;
+		}
+
+		if (b->notify_unsync && b->overrun) {
+			b->overrun = 0;
+			b->err = "buffer underrun";
+			b->errcode = 0;
+			return -FFAUDIO_ESYNC;
+		}
+
+		int r = aaudio_write_some(b, data, len);
+		if (r != 0)
+			return r;
+
+		if (0 != (r = ffaaudio_start(b)))
+			return -r;
+
+		if (b->nonblock)
+			return 0;
+
+		sleep_msec(b->period_ms);
+	}
 }
 
 static int ffaaudio_drain(ffaudio_buf *b)
 {
-	return -FFAUDIO_ERROR;
+	int r;
+	for (;;) {
+
+		if (b->dev_error != 0) {
+			b->err = "I/O error";
+			b->errcode = b->dev_error;
+			return -FFAUDIO_ERROR;
+		}
+
+		ffstr s;
+		size_t free;
+		ffring_write_begin(b->ring, 0, &s, &free);
+
+		if (free == b->ring->cap) {
+			(void) ffaaudio_stop(b);
+			return 1;
+		}
+
+		if (0 != (r = ffaaudio_start(b)))
+			return r;
+
+		if (b->nonblock)
+			return 0;
+
+		sleep_msec(b->period_ms);
+	}
 }
 
 static int ffaaudio_read(ffaudio_buf *b, const void **buffer)
@@ -305,7 +400,7 @@ static int ffaaudio_read(ffaudio_buf *b, const void **buffer)
 		if (b->nonblock)
 			return 0;
 
-		usleep(b->period_ms*1000);
+		sleep_msec(b->period_ms);
 	}
 }
 

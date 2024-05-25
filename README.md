@@ -41,7 +41,7 @@ Supports:
 	* shared and exclusive modes
 	* loopback mode (record what you hear)
 
-Note: AAudio & JACK playback is not implemented.
+Note: JACK playback is not implemented.
 
 
 ## How to use
@@ -185,6 +185,25 @@ make -B FFAUDIO_API=jack
 ./ffaudio-jack list
 ./ffaudio-jack record 2>file.raw
 # [not implemented] ./ffaudio-jack play <file.raw
+```
+
+* Android:
+
+Install Android SDK & NDK; then cross-build for Android:
+
+```sh
+make FFAUDIO_API=aaudio \
+	SYS=android \
+	ROOT_DIR=../.. \
+	SDK_DIR=/home/USER/Android/Sdk \
+	NDK_VER=YOUR_NDK_VERSION
+```
+
+Run the executable on Android:
+
+```sh
+./ffaudio-aaudio record 2>file.raw
+./ffaudio-aaudio play <file.raw
 ```
 
 * Windows:

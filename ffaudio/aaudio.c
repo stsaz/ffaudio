@@ -55,9 +55,14 @@ static void ffaaudio_free(ffaudio_buf *b)
 	ffmem_free(b);
 }
 
-static ffuint buf_msec(const ffaudio_conf *conf, ffuint frames)
+static unsigned buffer_frames_to_msec(const ffaudio_conf *conf, unsigned frames)
 {
 	return frames * 1000 / (conf->sample_rate * conf->channels);
+}
+
+static unsigned buffer_msec_to_frames(const ffaudio_conf *conf, unsigned msec)
+{
+	return conf->sample_rate * msec / 1000;
 }
 
 /** msec -> bytes:
@@ -122,6 +127,10 @@ static int ffaaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	if (conf->channels != 0)
 		AAudioStreamBuilder_setChannelCount(asb, conf->channels);
 
+	unsigned msec = (conf->buffer_length_msec != 0) ? conf->buffer_length_msec : 500;
+	unsigned frames = buffer_msec_to_frames(conf, msec);
+	AAudioStreamBuilder_setBufferCapacityInFrames(asb, frames);
+
 	if (flags & FFAUDIO_O_EXCLUSIVE)
 		AAudioStreamBuilder_setSharingMode(asb, AAUDIO_SHARING_MODE_EXCLUSIVE);
 
@@ -167,8 +176,8 @@ static int ffaaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 		goto end;
 	}
 
-	ffuint fr = AAudioStream_getBufferCapacityInFrames(b->as);
-	conf->buffer_length_msec = buf_msec(conf, fr);
+	r = AAudioStream_getBufferSizeInFrames(b->as);
+	conf->buffer_length_msec = buffer_frames_to_msec(conf, r);
 	b->period_ms = conf->buffer_length_msec / 4;
 	b->frame_size = (conf->format & 0xff) / 8 * conf->channels;
 

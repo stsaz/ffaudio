@@ -3,13 +3,14 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffbase/args.h>
 #include <ffbase/stringz.h>
 #include <test/std.h>
 #include <test/test.h>
 #ifdef FF_LINUX
 #include <time.h>
 #endif
-
+typedef unsigned char u_char;
 
 static inline void ffthread_sleep(ffuint msec)
 {
@@ -27,6 +28,7 @@ static inline void ffthread_sleep(ffuint msec)
 
 const ffaudio_interface *audio;
 int underrun;
+int skip_wav_header;
 
 void list()
 {
@@ -164,13 +166,13 @@ void play(ffaudio_conf *conf, ffuint flags)
 		data.len += n;
 		total += n;
 
-#if 0
-		static int wav_hdr_skip = 1;
-		if (wav_hdr_skip) {
-			wav_hdr_skip = 0;
-			ffstr_shift(&data, 44);
+		if (skip_wav_header) {
+			static int wav_hdr_skip = 1;
+			if (wav_hdr_skip) {
+				wav_hdr_skip = 0;
+				ffstr_shift(&data, 44);
+			}
 		}
-#endif
 
 		while (data.len >= frame_size) {
 			ffstdout_fmt("ffaudio.write...");
@@ -240,7 +242,46 @@ struct conf {
 	ffaudio_conf buf;
 	ffuint flags;
 	ffuint until_ms;
+	u_char exclusive;
+	u_char hwdev;
+	u_char loopback;
+	u_char nonblock;
+	u_char underrun;
+	u_char wav;
 };
+
+int conf_format(struct conf *c, ffstr s)
+{
+	if (ffstr_eqz(&s, "float32"))
+		c->buf.format = FFAUDIO_F_FLOAT32;
+	else if (ffstr_eqz(&s, "int32"))
+		c->buf.format = FFAUDIO_F_INT32;
+	else if (ffstr_eqz(&s, "int16"))
+		c->buf.format = FFAUDIO_F_INT16;
+	else if (ffstr_eqz(&s, "int8"))
+		c->buf.format = FFAUDIO_F_INT8;
+	else
+		return 1;
+	return 0;
+}
+
+#define O(m)  (void*)(size_t)FF_OFF(struct conf, m)
+static const struct ffarg args[] = {
+	{ "-buffer",		'u',	O(buf.buffer_length_msec) },
+	{ "-channels",		'u',	O(buf.channels) },
+	{ "-device",		'=s',	O(buf.device_id) },
+	{ "-exclusive",		'1',	O(exclusive) },
+	{ "-format",		'u',	conf_format },
+	{ "-hwdev",			'1',	O(hwdev) },
+	{ "-loopback",		'1',	O(loopback) },
+	{ "-nonblock",		'1',	O(nonblock) },
+	{ "-rate",			'u',	O(buf.sample_rate) },
+	{ "-underrun",		'1',	O(underrun) },
+	{ "-until",			'u',	O(until_ms) },
+	{ "-wav",			'1',	O(wav) },
+	{}
+};
+#undef O
 
 int conf_read(struct conf *c, int argc, const char **argv)
 {
@@ -251,88 +292,27 @@ int conf_read(struct conf *c, int argc, const char **argv)
 		c->flags = FFAUDIO_CAPTURE;
 	else if (ffsz_eq(c->cmd, "play"))
 		c->flags = FFAUDIO_PLAYBACK;
+	else
+		return 0;
 
-	for (int i = 2;  i < argc;  i++) {
-		const char *v = argv[i];
-		ffstr s;
-		ffstr_setz(&s, v);
-
-		if (ffstr_eqz(&s, "--exclusive")) {
-			c->flags |= FFAUDIO_O_EXCLUSIVE;
-
-		} else if (ffstr_eqz(&s, "--loopback")) {
-			c->flags &= ~0x0f;
-			c->flags |= FFAUDIO_LOOPBACK;
-
-		} else if (ffstr_eqz(&s, "--hwdev")) {
-			c->flags |= FFAUDIO_O_HWDEV;
-
-		} else if (ffstr_eqz(&s, "--nonblock")) {
-			c->flags |= FFAUDIO_O_NONBLOCK;
-
-		} else if (ffstr_eqz(&s, "--underrun")) {
-			underrun = 1;
-
-		} else if (ffstr_matchz(&s, "--buffer=")) {
-			ffstr_shift(&s, FFS_LEN("--buffer="));
-			ffuint n;
-			if (!ffstr_to_uint32(&s, &n)) {
-				fflog("bad value: %s", v);
-				return 1;
-			}
-			c->buf.buffer_length_msec = n;
-
-		} else if (ffstr_matchz(&s, "--until=")) {
-			ffstr_shift(&s, FFS_LEN("--until="));
-			ffuint n;
-			if (!ffstr_to_uint32(&s, &n)) {
-				fflog("bad value: %s", v);
-				return 1;
-			}
-			c->until_ms = n;
-
-		} else if (ffstr_matchz(&s, "--channels=")) {
-			ffstr_shift(&s, FFS_LEN("--channels="));
-			ffuint n;
-			if (!ffstr_to_uint32(&s, &n)) {
-				fflog("bad value: %s", v);
-				return 1;
-			}
-			c->buf.channels = n;
-
-		} else if (ffstr_matchz(&s, "--rate=")) {
-			ffstr_shift(&s, FFS_LEN("--rate="));
-			ffuint n;
-			if (!ffstr_to_uint32(&s, &n)) {
-				fflog("bad value: %s", v);
-				return 1;
-			}
-			c->buf.sample_rate = n;
-
-		} else if (ffstr_matchz(&s, "--format=")) {
-			ffstr_shift(&s, FFS_LEN("--format="));
-			if (ffstr_eqz(&s, "float32"))
-				c->buf.format = FFAUDIO_F_FLOAT32;
-			else if (ffstr_eqz(&s, "int32"))
-				c->buf.format = FFAUDIO_F_INT32;
-			else if (ffstr_eqz(&s, "int16"))
-				c->buf.format = FFAUDIO_F_INT16;
-			else if (ffstr_eqz(&s, "int8"))
-				c->buf.format = FFAUDIO_F_INT8;
-			else {
-				fflog("bad value: %s", v);
-				return 1;
-			}
-
-		} else if (ffstr_matchz(&s, "--device=")) {
-			ffstr_shift(&s, FFS_LEN("--device="));
-			c->buf.device_id = ffsz_dupn(s.ptr, s.len);
-
-		} else {
-			fflog("unknown option: %s", v);
-			return 1;
-		}
+	struct ffargs a = {};
+	int r = ffargs_process_argv(&a, args, c, FFARGS_O_DUPLICATES | FFARGS_O_PARTIAL, (char**)argv + 2, argc - 2);
+	if (r) {
+		fflog("Error: %s", a.error);
+		return 1;
 	}
+
+	if (c->loopback) {
+		c->flags &= ~0x0f;
+		c->flags |= FFAUDIO_LOOPBACK;
+	}
+
+	c->flags |= (c->exclusive) ? FFAUDIO_O_EXCLUSIVE : 0;
+	c->flags |= (c->hwdev) ? FFAUDIO_O_HWDEV : 0;
+	c->flags |= (c->nonblock) ? FFAUDIO_O_NONBLOCK : 0;
+
+	underrun = c->underrun;
+	skip_wav_header = c->wav;
 	return 0;
 }
 
@@ -349,17 +329,18 @@ COMMAND:\n\
   help     Show this message\n\
 \n\
 OPTION:\n\
-  --until=MSEC     Stop recording after this time (default:2000)\n\
-  --buffer=MSEC    Set buffer size in msec (default:250)\n\
-  --format=...     Set sample format: int8, int16, int32, float32 (default:int16)\n\
-  --rate=N         Set channels number (default:44100)\n\
-  --channels=N     Set channels number (default:2)\n\
-  --nonblock       Use non-blocking I/O\n\
-  --underrun       Trigger buffer underrun or overrun\n\
-  --device=...     Use specific device\n\
-  --hwdev          Open \"hw\" device, instead of \"plughw\" (ALSA)\n\
-  --exclusive      Open device in exclusive mode (WASAPI)\n\
-  --loopback       Open device in loopback mode (WASAPI)\n\
+  -until MSEC     Stop recording after this time (default: 2000)\n\
+  -buffer MSEC    Set buffer size in msec (default: 250)\n\
+  -format STR     Set sample format: int8, int16, int32, float32 (default: int16)\n\
+  -rate N         Set channels number (default: 44100)\n\
+  -channels N     Set channels number (default: 2)\n\
+  -nonblock       Use non-blocking I/O\n\
+  -underrun       Trigger buffer underrun or overrun\n\
+  -device STR     Use specific device\n\
+  -hwdev          Open \"hw\" device, instead of \"plughw\" (ALSA)\n\
+  -exclusive      Open device in exclusive mode (WASAPI)\n\
+  -loopback       Open device in loopback mode (WASAPI)\n\
+  -wav            Playback: skip WAV header\n\
 "
 		, psname, psname, psname);
 }

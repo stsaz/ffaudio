@@ -138,8 +138,10 @@ But instead of calling `ffaudio_default_interface()` you can just use an API dir
 
 Include the necessary ffaudio C files into your project's build script, e.g.:
 
+```makefile
 	./ffaudio-alsa.o: $(FFAUDIO_DIR)/ffaudio/alsa.c $(FFAUDIO_DIR)/ffaudio/audio.h
 		gcc -c $(CFLAGS) $< -o $@
+```
 
 Use the neceessary linker flags for the audio API, described below.
 
@@ -223,7 +225,7 @@ make -B FFAUDIO_API=dsound
 * macOS:
 
 ```sh
-make -B FFAUDIO_API=coreaudio
+make FFAUDIO_API=coreaudio
 ./ffaudio-coreaudio list
 ./ffaudio-coreaudio record 2>file.raw
 ./ffaudio-coreaudio play <file.raw
@@ -232,7 +234,7 @@ make -B FFAUDIO_API=coreaudio
 * FreeBSD:
 
 ```sh
-make -B FFAUDIO_API=oss
+make FFAUDIO_API=oss
 ./ffaudio-oss list
 ./ffaudio-oss record 2>file.raw
 ./ffaudio-oss play <file.raw

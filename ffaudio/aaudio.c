@@ -57,7 +57,7 @@ static void ffaaudio_free(ffaudio_buf *b)
 
 static unsigned buffer_frames_to_msec(const ffaudio_conf *conf, unsigned frames)
 {
-	return frames * 1000 / (conf->sample_rate * conf->channels);
+	return frames * 1000 / conf->sample_rate;
 }
 
 static unsigned buffer_msec_to_frames(const ffaudio_conf *conf, unsigned msec)
@@ -182,7 +182,7 @@ static int ffaaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	b->frame_size = (conf->format & 0xff) / 8 * conf->channels;
 
 	ffuint bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
-	if (NULL == (b->ring = ffring_alloc(bufsize, FFRING_1_READER | FFRING_1_WRITER))) {
+	if (NULL == (b->ring = ffring_alloc(bufsize, FFRING_1_WRITER))) {
 		b->err = "ffring_alloc()";
 		b->errcode = 0;
 		goto end;
@@ -238,13 +238,20 @@ err:
 
 static int ffaaudio_clear(ffaudio_buf *b)
 {
+	ffring_read_discard(b->ring);
+
+	int st = AAudioStream_getState(b->as);
+	if (st == AAUDIO_STREAM_STATE_PAUSING)
+		AAudioStream_waitForStateChange(b->as, st, &st, 3000000000ULL);
+
 	int r = AAudioStream_requestFlush(b->as);
 	if (r != 0) {
 		b->err = "AAudioStream_requestFlush()";
 		b->errcode = r;
 		return FFAUDIO_ERROR;
 	}
-	return FFAUDIO_ERROR;
+
+	return 0;
 }
 
 static aaudio_data_callback_result_t on_capture(AAudioStream *stream, void *userData, void *audioData, int32_t numFrames)

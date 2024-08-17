@@ -329,14 +329,21 @@ static int sleep_msec(unsigned msec)
 	return nanosleep(&ts, NULL);
 }
 
+static int io_error(ffaudio_buf *b)
+{
+	b->err = "I/O error";
+	b->errcode = b->dev_error;
+	if (b->dev_error == AAUDIO_ERROR_DISCONNECTED)
+		return -FFAUDIO_EDEV_OFFLINE;
+	return -FFAUDIO_ERROR;
+}
+
 static int ffaaudio_write(ffaudio_buf *b, const void *data, ffsize len)
 {
 	for (;;) {
 
 		if (b->dev_error != 0) {
-			b->err = "I/O error";
-			b->errcode = b->dev_error;
-			return -FFAUDIO_ERROR;
+			return io_error(b);
 		}
 
 		if (b->notify_unsync && b->overrun) {
@@ -366,9 +373,7 @@ static int ffaaudio_drain(ffaudio_buf *b)
 	for (;;) {
 
 		if (b->dev_error != 0) {
-			b->err = "I/O error";
-			b->errcode = b->dev_error;
-			return -FFAUDIO_ERROR;
+			return io_error(b);
 		}
 
 		ffstr s;
@@ -398,9 +403,7 @@ static int ffaaudio_read(ffaudio_buf *b, const void **buffer)
 			return r;
 
 		if (b->dev_error != 0) {
-			b->err = "I/O error";
-			b->errcode = b->dev_error;
-			return -FFAUDIO_ERROR;
+			return io_error(b);
 		}
 
 		if (b->notify_unsync && b->overrun) {

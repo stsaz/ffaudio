@@ -5,6 +5,7 @@
 #include <ffaudio/audio.h>
 #include <ffbase/ring.h>
 #include <aaudio/AAudio.h>
+#include <dlfcn.h>
 
 static int ffaaudio_init(ffaudio_init_conf *conf)
 {
@@ -117,6 +118,20 @@ static int ffaaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	if (b->capture)
 		AAudioStreamBuilder_setDirection(asb, AAUDIO_DIRECTION_INPUT);
+
+	if (conf->device_id && !strcmp(conf->device_id, "unprocessed")) {
+		typedef AAUDIO_API void (*AAudioStreamBuilder_setInputPreset_t)(AAudioStreamBuilder* builder, aaudio_input_preset_t inputPreset);
+		static AAudioStreamBuilder_setInputPreset_t _AAudioStreamBuilder_setInputPreset;
+		if (!_AAudioStreamBuilder_setInputPreset) {
+			void *dl = dlopen("libaaudio.so", 0);
+			if (dl) {
+				_AAudioStreamBuilder_setInputPreset = dlsym(dl, "AAudioStreamBuilder_setInputPreset");
+				dlclose(dl);
+			}
+		}
+		if (_AAudioStreamBuilder_setInputPreset)
+			_AAudioStreamBuilder_setInputPreset(asb, AAUDIO_INPUT_PRESET_UNPROCESSED);
+	}
 
 	if (conf->format != 0)
 		AAudioStreamBuilder_setFormat(asb, fmt_aa_ffa(conf->format));

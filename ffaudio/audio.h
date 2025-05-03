@@ -114,7 +114,8 @@ typedef struct ffaudio_conf {
 	const char *app_name;
 
 	/** Device ID returned by dev_info(FFAUDIO_DEV_ID)
-	NULL: use default device */
+	NULL: use default device
+	AAudio: "unprocessed" - use UNPROCESSED audio source */
 	const char *device_id;
 
 	/** Audio buffer size

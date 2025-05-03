@@ -3,9 +3,11 @@
 */
 
 #pragma once
-
-#include <ffbase/base.h>
-
+#ifdef _WIN32
+	#include <windows.h>
+#else
+	#include <stddef.h>
+#endif
 
 /** Error code */
 enum FFAUDIO_E {
@@ -43,7 +45,7 @@ enum FFAUDIO_DEV_INFO {
 	FFAUDIO_DEV_IS_DEFAULT,
 
 	/** Get default format (WASAPI, shared mode)
-	Return ffuint[]:  0:format, 1:sample_rate, 2:channels */
+	Return unsigned[]:  0:format, 1:sample_rate, 2:channels */
 	FFAUDIO_DEV_MIX_FORMAT,
 };
 
@@ -105,9 +107,9 @@ typedef struct ffaudio_init_conf {
 /** Audio buffer configuration */
 typedef struct ffaudio_conf {
 	/** Audio format */
-	ffuint format; // enum FFAUDIO_F
-	ffuint sample_rate;
-	ffuint channels;
+	unsigned format; // enum FFAUDIO_F
+	unsigned sample_rate;
+	unsigned channels;
 
 	/** Application name for PulseAudio & JACK
 	NULL: use default name */
@@ -121,7 +123,7 @@ typedef struct ffaudio_conf {
 	/** Audio buffer size
 	0: use default size
 	On return from open(), this is the actual buffer length from audio subsystem */
-	ffuint buffer_length_msec;
+	unsigned buffer_length_msec;
 
 	/** In a non-blocking mode AAudio calls this function when:
 	* some data becomes available in audio buffer for reading (recording);
@@ -131,7 +133,7 @@ typedef struct ffaudio_conf {
 	void (*on_event)(void*);
 	void *udata;
 
-#ifdef FF_WIN
+#ifdef _WIN32
 	/** For non-blocking exclusive mode WASAPI sets this to a newly created Windows Event object.
 	User puts this event into WaitFor...Object()-family functions to receive immediate events.
 	The handle is closed by ffaudio_interface.free(). */
@@ -161,7 +163,7 @@ typedef struct ffaudio_interface {
 	/** Create audio device listing
 	mode: enum FFAUDIO_DEV
 	Return device object */
-	ffaudio_dev* (*dev_alloc)(ffuint mode);
+	ffaudio_dev* (*dev_alloc)(unsigned mode);
 
 	/** Free device object */
 	void (*dev_free)(ffaudio_dev *d);
@@ -179,7 +181,7 @@ typedef struct ffaudio_interface {
 	/** Get device property
 	i: enum FFAUDIO_DEV_INFO
 	Return value */
-	const char* (*dev_info)(ffaudio_dev *d, ffuint i);
+	const char* (*dev_info)(ffaudio_dev *d, unsigned i);
 
 
 	/** Create audio buffer */
@@ -197,7 +199,7 @@ typedef struct ffaudio_interface {
 	  * 0: success
 	  * FFAUDIO_EFORMAT: input format isn't supported;  the supported format is set inside 'conf'
 	  * FFAUDIO_ERROR: call error() to get error message */
-	int (*open)(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags);
+	int (*open)(ffaudio_buf *b, ffaudio_conf *conf, unsigned flags);
 
 	/** Start/continue streaming
 	Return
@@ -229,7 +231,7 @@ typedef struct ffaudio_interface {
 	  * -FFAUDIO_ERROR: Error
 	  * -FFAUDIO_EDEV_OFFLINE: Device went offline
 	  * -FFAUDIO_ESYNC: Underrun detected (not a fatal error) */
-	int (*write)(ffaudio_buf *b, const void *data, ffsize len);
+	int (*write)(ffaudio_buf *b, const void *data, size_t len);
 
 	/** Wait until the playback buffer is empty
 	The stream must be opened with open(FFAUDIO_PLAYBACK)
@@ -260,6 +262,13 @@ typedef struct ffaudio_interface {
 } ffaudio_interface;
 
 /** API for direct use */
+#ifndef FF_EXTERN
+	#ifdef __cplusplus
+		#define FF_EXTERN extern "C"
+	#else
+		#define FF_EXTERN extern
+	#endif
+#endif
 FF_EXTERN const ffaudio_interface ffaaudio;
 FF_EXTERN const ffaudio_interface ffalsa;
 FF_EXTERN const ffaudio_interface ffpulse;

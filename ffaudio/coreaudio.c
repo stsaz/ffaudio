@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/ring.h>
 #include <CoreAudio/CoreAudio.h>
 #include <CoreFoundation/CFString.h>
@@ -257,13 +258,6 @@ static const AudioObjectPropertyAddress prop_idev_fmt = {
 	kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMaster
 };
 
-/** msec -> bytes:
-rate*width*channels*msec/1000 */
-static ffuint buffer_msec_to_size(const ffaudio_conf *conf, ffuint msec)
-{
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * msec / 1000;
-}
-
 static const AudioObjectPropertyAddress prop_idev_default = {
 	kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster
 };
@@ -334,7 +328,7 @@ int ffcoreaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
-	ffuint bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
+	ffuint bufsize = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec);
 	if (NULL == (b->ring = ffring_alloc(bufsize, FFRING_1_READER | FFRING_1_WRITER))) {
 		b->errfunc = "ffring_alloc";
 		goto end;

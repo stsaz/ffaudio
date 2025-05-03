@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/stringz.h>
 #include <ffbase/atomic.h>
 #include <pulse/pulseaudio.h>
@@ -453,13 +454,6 @@ static void pulse_on_change(pa_stream *s, void *udata)
 	pulse_signal(b->conn);
 }
 
-/** msec -> bytes:
-rate*width*channels*msec/1000 */
-static ffuint buffer_size(const ffaudio_conf *conf, ffuint msec)
-{
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * msec / 1000;
-}
-
 int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 {
 	if ((flags & 0x0f) > FFAUDIO_CAPTURE
@@ -498,7 +492,7 @@ int ffpulse_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	pa_buffer_attr attr;
 	ffmem_fill(&attr, 0xff, sizeof(pa_buffer_attr));
-	attr.tlength = buffer_size(conf, conf->buffer_length_msec);
+	attr.tlength = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec);
 
 	pa_stream_set_state_callback(b->stm, pulse_on_change, b);
 	if (!b->capture) {

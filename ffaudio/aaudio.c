@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/ring.h>
 #include <aaudio/AAudio.h>
 #include <dlfcn.h>
@@ -64,13 +65,6 @@ static unsigned buffer_frames_to_msec(const ffaudio_conf *conf, unsigned frames)
 static unsigned buffer_msec_to_frames(const ffaudio_conf *conf, unsigned msec)
 {
 	return conf->sample_rate * msec / 1000;
-}
-
-/** msec -> bytes:
-rate*width*channels*msec/1000 */
-static ffuint buffer_msec_to_size(const ffaudio_conf *conf, ffuint msec)
-{
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * msec / 1000;
 }
 
 static void on_event_dummy(void *param) {}
@@ -194,9 +188,9 @@ static int ffaaudio_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	r = AAudioStream_getBufferSizeInFrames(b->as);
 	conf->buffer_length_msec = buffer_frames_to_msec(conf, r);
 	b->period_ms = conf->buffer_length_msec / 4;
-	b->frame_size = (conf->format & 0xff) / 8 * conf->channels;
+	b->frame_size = _ffau_f_bits(conf->format)/8 * conf->channels;
 
-	ffuint bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
+	ffuint bufsize = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec);
 	if (NULL == (b->ring = ffring_alloc(bufsize, FFRING_1_WRITER))) {
 		b->err = "ffring_alloc()";
 		b->errcode = 0;

@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/string.h>
 #include <ffbase/stringz.h>
 
@@ -276,11 +277,10 @@ static int alsa_apply_format(ffaudio_buf *b, snd_pcm_hw_params_t *params, ffaudi
 	return 0;
 }
 
-/** usec -> bytes:
-rate*width*channels*usec/1000 */
+/** usec -> bytes */
 static ffuint buffer_usec_to_size(const ffaudio_conf *conf, ffuint usec)
 {
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * usec / 1000000;
+	return (unsigned long long)conf->sample_rate * _ffau_f_bits(conf->format)/8 * conf->channels * usec / 1000000;
 }
 
 int ffalsa_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
@@ -341,7 +341,7 @@ int ffalsa_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 		goto end;
 	}
 
-	b->frame_size = (conf->format & 0xff) / 8 * conf->channels;
+	b->frame_size = _ffau_f_bits(conf->format)/8 * conf->channels;
 	conf->buffer_length_msec = bufsize_usec / 1000;
 	b->period_ms = conf->buffer_length_msec / 3;
 	b->bufsize = buffer_usec_to_size(conf, bufsize_usec);

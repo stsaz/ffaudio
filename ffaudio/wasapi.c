@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/string.h>
 
 #define COBJMACROS
@@ -288,10 +289,10 @@ static void wf_from_ff(WAVEFORMATEX *wf, const ffaudio_conf *conf)
 		break;
 	}
 
-	wf->wBitsPerSample = conf->format & 0xff;
+	wf->wBitsPerSample = _ffau_f_bits(conf->format);
 	wf->nSamplesPerSec = conf->sample_rate;
 	wf->nChannels = conf->channels;
-	wf->nBlockAlign = (conf->format & 0xff) / 8 * conf->channels;
+	wf->nBlockAlign = _ffau_f_bits(conf->format)/8 * conf->channels;
 	wf->nAvgBytesPerSec = conf->sample_rate * wf->nBlockAlign;
 	wf->cbSize = 0;
 }
@@ -303,7 +304,7 @@ static void wfx_from_ff(WAVEFORMATEXTENSIBLE *wf, const ffaudio_conf *conf)
 	wf->Format.wFormatTag = 0xfffe;
 	wf->Format.cbSize = 22;
 
-	wf->Samples.wValidBitsPerSample = conf->format & 0xff;
+	wf->Samples.wValidBitsPerSample = _ffau_f_bits(conf->format);
 	if (conf->format == FFAUDIO_F_INT24_4)
 		wf->Samples.wValidBitsPerSample = 24;
 
@@ -477,13 +478,6 @@ static int wasapi_find_fmt(IAudioClient *client, IMMDevice *dev, ffaudio_conf *c
 	}
 
 	return -1;
-}
-
-/** bytes -> msec:
-size*1000/(rate*width*channels) */
-static ffuint buffer_size_to_msec(const ffaudio_conf *conf, ffuint size)
-{
-	return size * 1000 / (conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels);
 }
 
 /* Algorithm for opening WASAPI buffer:
@@ -677,8 +671,8 @@ int ffwasapi_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 		goto end;
 	}
 
-	b->frame_size = (conf->format & 0xff) / 8 * conf->channels;
-	conf->buffer_length_msec = buffer_size_to_msec(conf, b->buf_frames * b->frame_size);
+	b->frame_size = _ffau_f_bits(conf->format)/8 * conf->channels;
+	conf->buffer_length_msec = _ffau_buf_size_to_msec(conf, b->buf_frames * b->frame_size);
 	b->period_ms = conf->buffer_length_msec / 4;
 	if (events) {
 		if (NULL == (b->buf = ffmem_alloc(b->buf_frames * b->frame_size))) {

@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/string.h>
 
 #include <dsound.h>
@@ -224,19 +225,12 @@ static void wf_from_ff(WAVEFORMATEX *wf, const ffaudio_conf *conf)
 		break;
 	}
 
-	wf->wBitsPerSample = conf->format & 0xff;
+	wf->wBitsPerSample = _ffau_f_bits(conf->format);
 	wf->nSamplesPerSec = conf->sample_rate;
 	wf->nChannels = conf->channels;
-	wf->nBlockAlign = (conf->format & 0xff) / 8 * conf->channels;
+	wf->nBlockAlign = _ffau_f_bits(conf->format)/8 * conf->channels;
 	wf->nAvgBytesPerSec = conf->sample_rate * wf->nBlockAlign;
 	wf->cbSize = 0;
-}
-
-/** msec -> bytes:
-rate*width*channels*msec/1000 */
-static ffuint buffer_msec_to_size(const ffaudio_conf *conf, ffuint msec)
-{
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * msec / 1000;
 }
 
 static int dsound_open_play(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
@@ -261,7 +255,7 @@ static int dsound_open_play(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
-	b->bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
+	b->bufsize = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec);
 
 	DSBUFFERDESC bufdesc = {
 		sizeof(DSBUFFERDESC),
@@ -306,7 +300,7 @@ static int dsound_open_capt(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	if (conf->buffer_length_msec == 0)
 		conf->buffer_length_msec = 500;
-	b->bufsize = buffer_msec_to_size(conf, conf->buffer_length_msec);
+	b->bufsize = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec);
 
 	DSCBUFFERDESC desc = {
 		sizeof(DSCBUFFERDESC), 0, b->bufsize, 0, &wf, 0, NULL

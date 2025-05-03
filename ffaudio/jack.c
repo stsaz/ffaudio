@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/string.h>
 #include <ffbase/ring.h>
 
@@ -139,13 +140,6 @@ void ffjack_free(ffaudio_buf *b)
 	ffmem_free(b);
 }
 
-/** bytes -> msec:
-size*1000/(rate*width*channels) */
-static ffuint buffer_size_to_msec(const ffaudio_conf *conf, ffuint size)
-{
-	return size * 1000 / (conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels);
-}
-
 static void _jack_shut(void *arg);
 static int _jack_process(jack_nframes_t nframes, void *arg);
 
@@ -195,7 +189,7 @@ int ffjack_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 
 	ffsize bufsize = jack_get_buffer_size(gclient);
 	bufsize *= sizeof(float);
-	conf->buffer_length_msec = buffer_size_to_msec(conf, bufsize);
+	conf->buffer_length_msec = _ffau_buf_size_to_msec(conf, bufsize);
 	if (NULL == (b->ring = ffring_alloc(bufsize * 2, FFRING_1_READER | FFRING_1_WRITER))) {
 		b->err = "ffring_create";
 		goto end;

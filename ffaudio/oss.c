@@ -3,6 +3,7 @@
 */
 
 #include <ffaudio/audio.h>
+#include <ffaudio/util.h>
 #include <ffbase/stringz.h>
 
 #include <sys/soundcard.h>
@@ -217,20 +218,6 @@ static int oss_set_format(ffaudio_buf *b, ffaudio_conf *conf)
 	return 0;
 }
 
-/** bytes -> msec:
-size*1000/(rate*width*channels) */
-static ffuint buffer_size_to_msec(const ffaudio_conf *conf, ffuint size)
-{
-	return size * 1000 / (conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels);
-}
-
-/** msec -> bytes:
-rate*width*channels*msec/1000 */
-static ffuint buffer_size(const ffaudio_conf *conf, ffuint msec)
-{
-	return conf->sample_rate * (conf->format & 0xff) / 8 * conf->channels * msec / 1000;
-}
-
 int ffoss_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 {
 	int r, rc = FFAUDIO_ERROR;
@@ -267,7 +254,7 @@ int ffoss_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 			}
 		}
 
-		ffuint frag_num = buffer_size(conf, conf->buffer_length_msec) / info.fragsize;
+		ffuint frag_num = _ffau_buf_msec_to_size(conf, conf->buffer_length_msec) / info.fragsize;
 		ffuint fr = (frag_num << 16) | (ffuint)log2(info.fragsize); //buf_size = frag_num * 2^n
 		if (0 > ioctl(b->fd, SNDCTL_DSP_SETFRAGMENT, &fr)) {
 			b->errfunc = "ioctl(SNDCTL_DSP_SETFRAGMENT)";
@@ -283,7 +270,7 @@ int ffoss_open(ffaudio_buf *b, ffaudio_conf *conf, ffuint flags)
 	}
 	ffuint bufsize = 16*1024;
 	if (r == 0) {
-		conf->buffer_length_msec = buffer_size_to_msec(conf, info.fragstotal * info.fragsize);
+		conf->buffer_length_msec = _ffau_buf_size_to_msec(conf, info.fragstotal * info.fragsize);
 		bufsize = info.fragstotal * info.fragsize;
 	}
 

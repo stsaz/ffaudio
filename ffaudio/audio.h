@@ -261,6 +261,36 @@ typedef struct ffaudio_interface {
 	void (*signal)(ffaudio_buf *b);
 } ffaudio_interface;
 
+#ifdef __cplusplus
+
+struct xxffaudio_buf {
+	const ffaudio_interface *a;
+	ffaudio_buf *b;
+
+	xxffaudio_buf(const ffaudio_interface *ai) { a = ai; b = a->alloc(); }
+	~xxffaudio_buf() { a->free(b); }
+	const char* error() { return a->error(b); }
+
+	int start() { return a->start(b); }
+	int stop() { return a->stop(b); }
+	int clear() { return a->clear(b); }
+};
+
+struct xxffaudio_play_buf : xxffaudio_buf {
+	xxffaudio_play_buf(const ffaudio_interface *ai) : xxffaudio_buf(ai) {}
+	int open(ffaudio_conf *conf, unsigned flags) { return a->open(b, conf, FFAUDIO_PLAYBACK | flags); }
+	int write(const void *data, size_t len) { return a->write(b, data, len); }
+	int drain() { return a->drain(b); }
+};
+
+struct xxffaudio_rec_buf : xxffaudio_buf {
+	xxffaudio_rec_buf(const ffaudio_interface *ai) : xxffaudio_buf(ai) {}
+	int open(ffaudio_conf *conf, unsigned flags) { return a->open(b, conf, FFAUDIO_CAPTURE | flags); }
+	int read(const void **buffer) { return a->read(b, buffer); }
+};
+
+#endif
+
 /** API for direct use */
 #ifndef FF_EXTERN
 	#ifdef __cplusplus

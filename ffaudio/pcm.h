@@ -2,6 +2,7 @@
 2015, Simon Zolin */
 
 #pragma once
+#include <ffbase/base.h>
 #include <math.h>
 
 struct pcm_af {
@@ -13,6 +14,11 @@ struct pcm_af {
 
 /** Bits per sample */
 #define pcm_f_bits(f)  ((f) & 0xff)
+
+/** Return 1 if objects are equal */
+static inline int pcm_af_eq(const struct pcm_af *a, const struct pcm_af *b) {
+	return (*(unsigned long long*)a == *(unsigned long long*)b);
+}
 
 union pcm_data {
 	void *p;
@@ -121,8 +127,8 @@ static inline int pcm_i24_flt(double f)
 static inline int pcm_i32_flt(double d)
 {
 	d *= pcm_max32;
-	return (d < -pcm_max32) ? -0x80000000
-		: (d > pcm_max32 - 1) ? 0x7fffffff
+	return (d < -pcm_max32) ? (int)-0x80000000
+		: (d > pcm_max32 - 1) ? (int)0x7fffffff
 		: int_ftoi(d);
 }
 

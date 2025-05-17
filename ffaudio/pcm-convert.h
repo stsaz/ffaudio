@@ -1,6 +1,7 @@
 /** ffaudio: PCM conversion.
 2015, Simon Zolin */
 
+#include <ffaudio/audio.h>
 #include <ffaudio/pcm.h>
 #include <ffbase/base.h>
 

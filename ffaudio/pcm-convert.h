@@ -602,7 +602,7 @@ static inline int pcm_convert(const struct pcm_af *outpcm, void *out, const stru
 	case X(FFAUDIO_F_INT32, FFAUDIO_F_INT16):
 		for (ich = 0;  ich != nch;  ich++) {
 			for (i = 0;  i != samples;  i++) {
-				to.pi16[ich][i * ostep] = from.pi32[ich][i * istep];
+				to.pi16[ich][i * ostep] = from.pi32[ich][i * istep] / 0x10000;
 			}
 		}
 		break;

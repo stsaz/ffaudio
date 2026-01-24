@@ -446,7 +446,7 @@ static int _pcm_convert_stereo(unsigned format_hash, void *out, const void *in, 
 	case X4(FFAUDIO_F_FLOAT32, 1, FFAUDIO_F_INT24, 0):
 		for (i = 0;  i < samples;  i++) {
 			*o.f32++ = pcm_flt_i24(pcm_i32_i24(iL.i8 + i * 3));
-			*o.f32++ = pcm_flt_i24(pcm_i32_i24(iL.i8 + i * 3));
+			*o.f32++ = pcm_flt_i24(pcm_i32_i24(iR.i8 + i * 3));
 		}
 		break;
 

@@ -371,29 +371,14 @@ static aaudio_data_callback_result_t on_play(AAudioStream *stream, void *userDat
 	ffaudio_buf *b = userData;
 	b->on_event(b->udata);
 
-	u_char *d = audioData;
 	unsigned n = numFrames * b->frame_size;
-	ffstr s;
-	ffring_head h = ffring_read_begin(b->ring, n, &s, NULL);
-	if (s.len == 0)
-		goto end;
-	ffmem_copy(d, s.ptr, s.len);
+	ffstr d1, d2;
+	ffring_head h = ffring_read_max_begin(b->ring, n, &d1, &d2, NULL);
+	ffmem_copy(audioData, d1.ptr, d1.len);
+	ffmem_copy((char*)audioData + d1.len, d2.ptr, d2.len);
 	ffring_read_finish(b->ring, h);
-
-	d += s.len;
-	n -= s.len;
-	if (n != 0) {
-		h = ffring_read_begin(b->ring, n, &s, NULL);
-		if (s.len == 0)
-			goto end;
-		ffmem_copy(d, s.ptr, s.len);
-		ffring_read_finish(b->ring, h);
-	}
-	return 0;
-
-end:
-	if (n != 0) {
-		ffmem_fill(d, 0, n);
+	if (n < d1.len + d2.len) {
+		ffmem_fill((char*)audioData + d1.len + d2.len, 0, n - (d1.len + d2.len));
 		b->overrun = 1;
 	}
 	return 0;
@@ -401,11 +386,19 @@ end:
 
 static int aaudio_write_some(ffaudio_buf *b, const void *data, size_t len)
 {
-	unsigned r = ffring_write(b->ring, data, len);
-	if (r != len) {
-		r += ffring_write(b->ring, (char*)data + r, len - r);
+	ffstr d1, d2;
+	size_t free;
+	ffring_head wh = ffring_write_all_begin(b->ring, len, &d1, &d2, &free);
+	if (!d1.len) {
+		len = ffint_align_floor(free, b->frame_size);
+		if (!len)
+			return 0;
+		wh = ffring_write_all_begin(b->ring, len, &d1, &d2, NULL);
 	}
-	return r;
+	ffmem_copy(d1.ptr, data, d1.len);
+	ffmem_copy(d2.ptr, (char*)data + d1.len, d2.len);
+	ffring_write_finish(b->ring, wh, NULL);
+	return d1.len + d2.len;
 }
 
 static int sleep_msec(unsigned msec)

@@ -50,19 +50,19 @@ void ffcoreaudio_dev_free(ffaudio_dev *d)
 }
 
 static const AudioObjectPropertyAddress prop_dev_list = {
-	kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster
+	kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_dev_outname = {
-	kAudioObjectPropertyName, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster
+	kAudioObjectPropertyName, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_dev_inname = {
-	kAudioObjectPropertyName, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMaster
+	kAudioObjectPropertyName, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_dev_outconf = {
-	kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster
+	kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_dev_inconf = {
-	kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMaster
+	kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMain
 };
 
 /** Get device list */
@@ -252,17 +252,17 @@ static OSStatus coreaudio_ioproc_capture(AudioDeviceID device, const AudioTimeSt
 	AudioBufferList *outdata, const AudioTimeStamp *outtime,
 	void *udata);
 static const AudioObjectPropertyAddress prop_odev_fmt = {
-	kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster
+	kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_idev_fmt = {
-	kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMaster
+	kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeInput, kAudioObjectPropertyElementMain
 };
 
 static const AudioObjectPropertyAddress prop_idev_default = {
-	kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster
+	kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain
 };
 static const AudioObjectPropertyAddress prop_odev_default = {
-	kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster
+	kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain
 };
 static int coreaudio_dev_default(ffuint capture)
 {
